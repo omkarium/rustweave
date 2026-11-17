@@ -1,5 +1,10 @@
 # Rustweave
 
+[![crates.io (binary)](https://img.shields.io/crates/v/rustweave.svg?label=rustweave)](https://crates.io/crates/rustweave)
+[![crates.io (library)](https://img.shields.io/crates/v/rustweave-core.svg?label=rustweave-core)](https://crates.io/crates/rustweave-core)
+[![docs.rs](https://docs.rs/rustweave-core/badge.svg)](https://docs.rs/rustweave-core)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
+
 `rustweave` is a Rust implementation of a DataWeave-compatible expression language. It provides an
 expression engine, JSON input and output, exact decimal arithmetic, and a command-line interface.
 
