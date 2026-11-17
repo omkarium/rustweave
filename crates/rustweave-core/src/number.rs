@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Exact decimal numbers with 34-significant-digit division.
 
 use std::cmp::Ordering;

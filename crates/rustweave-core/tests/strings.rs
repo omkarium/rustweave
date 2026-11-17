@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Behaviour tests for the Strings module.
 
 mod common;

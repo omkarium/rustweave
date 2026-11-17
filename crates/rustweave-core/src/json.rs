@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! JSON input parsing and pretty-printed output.
 //!
 //! Input accepts standard JSON. Output uses two-space indentation, one element

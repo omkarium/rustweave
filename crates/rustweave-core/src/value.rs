@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Runtime values produced by evaluating a script.
 
 use std::cmp::Ordering;

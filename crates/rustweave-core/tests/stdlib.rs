@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Offline tests for the Rust implementations of the standard-library functions.
 //!
 //! These tests need no external runtime and run as part of `cargo test`.

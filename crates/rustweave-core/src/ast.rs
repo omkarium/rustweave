@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Abstract syntax tree for parsed scripts.
 
 use crate::number::Number;

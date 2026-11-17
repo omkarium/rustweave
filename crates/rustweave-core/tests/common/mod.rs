@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared inputs and helpers for the behaviour tests.
 
 pub const PAYLOAD: &str = r####"{

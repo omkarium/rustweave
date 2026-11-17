@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Behaviour tests for the language surface.
 
 mod common;

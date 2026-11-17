@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Command-line interface for evaluating scripts.
 
 #![deny(dead_code)]

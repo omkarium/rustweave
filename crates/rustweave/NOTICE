@@ -1,9 +1,14 @@
 rustweave
-
 Copyright 2026 Venkatesh Omkaram and contributors
 
-This product includes software developed by Venkatesh Omkaram and the
-rustweave contributors.
+rustweave is an independent Rust implementation of a DataWeave-compatible expression language.
+It is not affiliated with, endorsed by, sponsored by, or approved by Salesforce, Inc., MuleSoft,
+LLC, or their affiliates.
 
-Licensed under the Apache License, Version 2.0 or the MIT license, at your
-option. See LICENSE-APACHE and LICENSE-MIT for the full license texts.
+DataWeave, MuleSoft, Anypoint, and Salesforce are trademarks or registered trademarks of
+Salesforce, Inc. or its affiliates. See TRADEMARKS.md.
+
+Third-party notices are in THIRD_PARTY_NOTICES.md.
+
+Licensed under either the Apache License, Version 2.0 (LICENSE-APACHE) or the MIT license
+(LICENSE-MIT), at your option.

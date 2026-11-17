@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 fn run(body: &str) -> String {
     let script =
         format!("%dw 2.0\nimport * from dw::core::Arrays\noutput application/json\n---\n{body}");

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Expression evaluator and runtime operators.
 
 use std::rc::Rc;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Standard-library functions for arrays, objects, strings, numbers, and core operations.
 //!
 //! [`builtin_name`] reports which names are available, [`lambda_positions`] lists

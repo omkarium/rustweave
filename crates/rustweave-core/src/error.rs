@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Error type returned by parsing, evaluation, and JSON operations.
 
 use std::fmt;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! A DataWeave-compatible expression evaluator.
 //!
 //! The crate parses a script, evaluates it with optional JSON inputs, and

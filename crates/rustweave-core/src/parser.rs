@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! Recursive-descent parser for scripts and expressions.
 
 use crate::ast::{BinOp, Expr, InterpSegment, Param, UnOp};

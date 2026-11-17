@@ -33,7 +33,14 @@ rustweave -f transform.dwl
 
 The engine is provided by the `rustweave-core` crate.
 
+## Trademarks
+
+DataWeave, MuleSoft, Anypoint, and Salesforce are trademarks or registered trademarks of
+Salesforce, Inc. or its affiliates. `rustweave` is an independent project and is not affiliated
+with, sponsored by, endorsed by, or approved by Salesforce or MuleSoft. The names are used only to
+describe compatibility with the DataWeave expression language. See `TRADEMARKS.md`.
+
 ## License
 
 Licensed under either the Apache License, Version 2.0 or the MIT license, at your option. See
-`LICENSE-APACHE`, `LICENSE-MIT`, and `NOTICE`.
+`LICENSE-APACHE`, `LICENSE-MIT`, `NOTICE`, and `TRADEMARKS.md`.

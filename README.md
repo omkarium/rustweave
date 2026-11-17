@@ -164,6 +164,15 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
+## Trademarks
+
+DataWeave, MuleSoft, Anypoint, and Salesforce are trademarks or registered trademarks of
+Salesforce, Inc. or its affiliates. `rustweave` is an independent open-source project and is not
+affiliated with, sponsored by, endorsed by, or approved by Salesforce, Inc., MuleSoft, LLC, or
+their affiliates. The names are used only to describe compatibility with the DataWeave expression
+language. No MuleSoft or Salesforce logos, icons, or other branding are used. See
+[TRADEMARKS.md](TRADEMARKS.md).
+
 ## License
 
 Licensed under either of:
@@ -173,4 +182,5 @@ Licensed under either of:
 
 at your option. Unless you explicitly state otherwise, any contribution intentionally submitted for
 inclusion in this project shall be dual licensed as above, without any additional terms or
-conditions.
+conditions. See [NOTICE](NOTICE) for attribution and [TRADEMARKS.md](TRADEMARKS.md) for trademark
+information.
