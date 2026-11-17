@@ -44,6 +44,29 @@ order, and error handling conventions.
 Include a minimal script that reproduces the problem, the input values, the actual output, and the
 expected output. For command-line problems, include the exact arguments used.
 
+## Contribution boundaries
+
+Do not submit work that puts the project or its users at risk:
+
+- Do not copy code from another implementation, or reverse-engineer, decompile or disassemble a
+  proprietary runtime, and do not include generated or decompiled source.
+- Do not add third-party source code, vendored dependencies, binaries, jars, or research material.
+  A small permissively licensed excerpt is acceptable only with attribution in
+  `THIRD_PARTY_NOTICES.md` and maintainer approval.
+- Do not use DataWeave, MuleSoft, Anypoint, Salesforce, or confusingly similar names as the crate,
+  binary, repository, or command name. Descriptive references such as "DataWeave-compatible" are
+  allowed; logos, icons, and other branding are not.
+- Do not claim official affiliation, sponsorship, endorsement, certification, or support.
+- Do not remove, weaken, or reword the license, trademark, or non-affiliation notices.
+- Do not commit secrets, tokens, credentials, or private data.
+- Do not change release settings, publish configuration, or release workflows; only the repository
+  owner publishes.
+- Do not modify tests to hide a failure. Fix the behaviour or discuss the spec change with the
+  maintainer.
+- Do not submit code you do not have the right to license under `MIT OR Apache-2.0`.
+- Do not add a personal copyright header to every file. Keep the SPDX identifier and the project
+  `NOTICE`.
+
 ## Submitting changes
 
 - Keep changes focused and include tests.
