@@ -1,4 +1,4 @@
-# rustweave
+# Rustweave
 
 `rustweave` is a Rust implementation of a DataWeave-compatible expression language. It provides an
 expression engine, JSON input and output, exact decimal arithmetic, and a command-line interface.
