@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/rustweave-core", "crates/rustweave"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+authors = ["Venkatesh Omkaram"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/omkarium/rustweave"
+homepage = "https://github.com/omkarium/rustweave"
+keywords = ["dataweave", "interpreter", "json", "expression", "cli"]
+categories = [
+    "command-line-utilities",
+    "development-tools",
+    "parser-implementations",
+]
+
+[workspace.dependencies]
+num-bigint = "0.4"
+num-traits = "0.2"
+regex = "1"
+rustweave-core = { path = "crates/rustweave-core", version = "0.1.0" }
+
+# Integration-test binaries share helper modules, so helpers used by only some
+# targets are otherwise reported as dead code. Library and binary targets keep
+# their own `#![deny(dead_code)]`.
+[workspace.lints.rust]
+dead_code = "allow"

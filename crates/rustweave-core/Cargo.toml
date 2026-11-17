@@ -1,0 +1,37 @@
+[package]
+name = "rustweave-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "A DataWeave-compatible expression engine"
+documentation = "https://docs.rs/rustweave-core"
+readme = "README.md"
+include = [
+    "src/**",
+    "tests/**",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "NOTICE",
+    "TRADEMARKS.md",
+    "THIRD_PARTY_NOTICES.md",
+]
+
+[lib]
+name = "rustweave_core"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+num-bigint.workspace = true
+num-traits.workspace = true
+regex.workspace = true
