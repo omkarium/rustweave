@@ -1,0 +1,6 @@
+# Release-critical files must be reviewed by the repository owner.
+/.github/ @omkarium
+/Cargo.toml @omkarium
+/Cargo.lock @omkarium
+/crates/rustweave-core/Cargo.toml @omkarium
+/crates/rustweave/Cargo.toml @omkarium
