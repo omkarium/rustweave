@@ -1,5 +1,88 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Command-line interface for evaluating scripts.
+//! Command-line interface for the `rustweave` expression engine.
+//!
+//! `rustweave` reads a DataWeave-compatible expression or script, evaluates it with optional JSON
+//! inputs, and prints pretty-printed JSON. It is a thin wrapper around the
+//! [`rustweave_core`](https://crates.io/crates/rustweave-core) crate; the language and
+//! standard-library surface is documented there.
+//!
+//! # Install
+//!
+//! ```text
+//! cargo install rustweave
+//! ```
+//!
+//! # Usage
+//!
+//! ```text
+//! rustweave [run] [-i name=file.json]... (-f script.dwl | "<script>")
+//! ```
+//!
+//! - A leading `run` is accepted and ignored.
+//! - `-s` is accepted and ignored.
+//! - `-i name=path` reads JSON from a file and binds it to `name`.
+//! - `-f path` reads the script from a file.
+//! - Any other argument is used as the script text.
+//!
+//! # Examples
+//!
+//! Run an expression directly:
+//!
+//! ```console
+//! $ rustweave '[1, 2, 3] map $ * 2'
+//! [
+//!   2,
+//!   4,
+//!   6
+//! ]
+//! ```
+//!
+//! Bind a JSON file:
+//!
+//! ```console
+//! $ rustweave -i payload=payload.json \
+//!     'payload.orders map { id: $.id, total: $.total }'
+//! ```
+//!
+//! Run a script file with a header:
+//!
+//! ```text
+//! %dw 2.0
+//! output application/json
+//! ---
+//! payload.orders
+//!   filter $.total > 100
+//!   map { id: $.id, customer: $.customer }
+//! ```
+//!
+//! ```console
+//! $ rustweave -i payload=payload.json -f transform.dwl
+//! ```
+//!
+//! `rustweave run ...` is equivalent when your tooling always emits a leading `run`.
+//!
+//! # Exit status
+//!
+//! - `0` on success; the JSON result is printed to stdout.
+//! - `1` on an input, parse, or evaluation error; `[ERROR] message` is printed to stderr.
+//!
+//! # Scope
+//!
+//! The CLI targets JSON output. The parser, evaluator, exact decimal arithmetic, standard library,
+//! and supported/unsupported feature list are provided by `rustweave-core`; see that crate's
+//! documentation. XML/CSV/YAML, dates/times, binary, user-defined types, metadata, `update`,
+//! `using`, `read`/`write`, `dw::Runtime`, and Mule/Anypoint connectors are not supported yet.
+//!
+//! # Trademarks
+//!
+//! DataWeave, MuleSoft, Anypoint, and Salesforce are trademarks or registered trademarks of
+//! Salesforce, Inc. or its affiliates. `rustweave` is an independent project and is not
+//! affiliated with, sponsored by, endorsed by, or approved by Salesforce or MuleSoft. The names
+//! are used only to describe compatibility. See the repository `TRADEMARKS.md`.
+//!
+//! # License
+//!
+//! Licensed under either of the Apache License, Version 2.0 or the MIT license, at your option.
 
 #![deny(dead_code)]
 

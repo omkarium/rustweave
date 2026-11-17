@@ -107,6 +107,18 @@ $ echo $?
 1
 ```
 
+## Exit status
+
+- `0` on success; the JSON result is printed to stdout.
+- `1` on an input, parse, or evaluation error; `[ERROR] message` is printed to stderr.
+
+## Scope
+
+The CLI targets JSON output. The parser, evaluator, exact decimal arithmetic, standard library, and
+supported/unsupported feature list are provided by the `rustweave-core` crate; see its
+documentation. XML/CSV/YAML, dates/times, binary, user-defined types, metadata, `update`, `using`,
+`read`/`write`, `dw::Runtime`, and Mule/Anypoint connectors are not supported yet.
+
 The engine is provided by the `rustweave-core` crate.
 
 ## Trademarks
