@@ -4,7 +4,19 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "**/LICENSE-*"
+      - "**/NOTICE"
+      - ".github/CODEOWNERS"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "**/LICENSE-*"
+      - "**/NOTICE"
+      - ".github/CODEOWNERS"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
