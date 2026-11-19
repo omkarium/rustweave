@@ -171,6 +171,10 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 - Date, time, period, time-zone, type, and binary values.
 - A reusable `Interp` and direct `Value`/`json` access.
 
+The public `functions` module also provides a typed catalog of every supported function and its
+namespace. See [`Function::ALL`](https://docs.rs/rustweave-core/latest/rustweave_core/functions/struct.Function.html#associatedconstant.ALL)
+on docs.rs.
+
 See the repository README for the full function list and CLI examples.
 
 ## What is not supported yet

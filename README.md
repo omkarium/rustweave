@@ -155,6 +155,12 @@ The crate also exposes:
 - `rustweave_core::Value`, the runtime value type.
 - `rustweave_core::json::parse` and `rustweave_core::json::write` for JSON input and output.
 
+## Function catalog
+
+The `rustweave_core::functions` module provides a typed catalog of every supported function,
+including its DataWeave namespace and a short description. The complete list is available as
+[`Function::ALL`](https://docs.rs/rustweave-core/latest/rustweave_core/functions/struct.Function.html#associatedconstant.ALL).
+
 ## Language surface
 
 A script may start with a header containing `%dw 2.0`, `output application/json`,
