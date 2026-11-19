@@ -27,6 +27,7 @@ pub enum HeaderItem {
 #[derive(Clone, Debug)]
 pub struct Script {
     pub items: Vec<HeaderItem>,
+    pub imports: Vec<String>,
     pub body: Expr,
 }
 
@@ -64,12 +65,18 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
     };
 
     let mut items = Vec::new();
+    let mut imports = Vec::new();
     for line in header_lines {
         let line = line.trim();
+        if line.starts_with("import ") {
+            if let Some((_, module)) = line.split_once(" from ") {
+                imports.push(module.trim().to_string());
+            }
+            continue;
+        }
         if line.is_empty()
             || line.starts_with("%dw")
             || line.starts_with("output ")
-            || line.starts_with("import ")
             || line.starts_with('@')
         {
             continue;
@@ -94,7 +101,11 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
     }
 
     let body = parse_expression(&body_text)?;
-    Ok(Script { items, body })
+    Ok(Script {
+        items,
+        imports,
+        body,
+    })
 }
 
 /// Splits `name = value` without splitting comparison operators.

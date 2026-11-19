@@ -43,6 +43,154 @@ pub fn write(value: &Value) -> String {
     out
 }
 
+/// Options for JSON output.
+#[derive(Clone, Debug, Default)]
+pub struct WriteOptions {
+    /// Indents the output when true.
+    pub indent: bool,
+    /// Skips null values in `arrays`, `objects`, or `everywhere`.
+    pub skip_null_on: Option<String>,
+    /// Converts duplicate object keys into arrays of values.
+    pub duplicate_key_as_array: bool,
+}
+
+impl WriteOptions {
+    /// Returns the default writer options: indented output, no null skipping.
+    pub fn pretty() -> Self {
+        WriteOptions {
+            indent: true,
+            skip_null_on: None,
+            duplicate_key_as_array: false,
+        }
+    }
+}
+
+/// Writes a [`Value`] as JSON using explicit writer options.
+pub fn write_with(value: &Value, options: &WriteOptions) -> String {
+    let mut out = String::new();
+    write_value_options(value, 0, &mut out, options);
+    out
+}
+
+fn skip_null(options: &WriteOptions, container: &str) -> bool {
+    match options.skip_null_on.as_deref() {
+        Some("everywhere") => true,
+        Some(value) => value == container,
+        None => false,
+    }
+}
+
+fn grouped_entries(entries: &[(String, Value)], options: &WriteOptions) -> Vec<(String, Value)> {
+    if !options.duplicate_key_as_array {
+        return entries.to_vec();
+    }
+    let mut out: Vec<(String, Value)> = Vec::new();
+    for (key, value) in entries {
+        if let Some((_, existing)) = out.iter_mut().find(|(name, _)| name == key) {
+            match existing {
+                Value::Array(items) => items.push(value.clone()),
+                other => {
+                    let first = std::mem::replace(other, Value::Null);
+                    *other = Value::Array(vec![first, value.clone()]);
+                }
+            }
+        } else {
+            out.push((key.clone(), value.clone()));
+        }
+    }
+    out
+}
+
+fn write_value_options(value: &Value, level: usize, out: &mut String, options: &WriteOptions) {
+    match value {
+        Value::Array(items) => {
+            let items: Vec<&Value> = items
+                .iter()
+                .filter(|item| !(skip_null(options, "arrays") && item.is_null()))
+                .collect();
+            out.push('[');
+            if options.indent {
+                out.push('\n');
+                if items.is_empty() {
+                    indent(level + 1, out);
+                    out.push('\n');
+                } else {
+                    for (index, item) in items.iter().enumerate() {
+                        indent(level + 1, out);
+                        write_value_options(item, level + 1, out, options);
+                        if index + 1 < items.len() {
+                            out.push(',');
+                        }
+                        out.push('\n');
+                    }
+                }
+                indent(level, out);
+            } else {
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    write_value_options(item, level + 1, out, options);
+                }
+            }
+            out.push(']');
+        }
+        Value::Object(entries) => {
+            let entries: Vec<(String, Value)> = grouped_entries(entries, options)
+                .into_iter()
+                .filter(|(_, item)| !(skip_null(options, "objects") && item.is_null()))
+                .collect();
+            out.push('{');
+            if options.indent {
+                out.push('\n');
+                if entries.is_empty() {
+                    indent(level + 1, out);
+                    out.push('\n');
+                } else {
+                    for (index, (key, item)) in entries.iter().enumerate() {
+                        indent(level + 1, out);
+                        write_string(key, out);
+                        out.push_str(": ");
+                        write_value_options(item, level + 1, out, options);
+                        if index + 1 < entries.len() {
+                            out.push(',');
+                        }
+                        out.push('\n');
+                    }
+                }
+                indent(level, out);
+            } else {
+                for (index, (key, item)) in entries.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    write_string(key, out);
+                    out.push_str(": ");
+                    write_value_options(item, level + 1, out, options);
+                }
+            }
+            out.push('}');
+        }
+        Value::Null => out.push_str("null"),
+        Value::Bool(true) => out.push_str("true"),
+        Value::Bool(false) => out.push_str("false"),
+        Value::Number(number) => out.push_str(&number.to_string()),
+        Value::String(text) => write_string(text, out),
+        Value::Date(date) => write_string(&crate::temporal::format_date(date), out),
+        Value::DateTime(date) => write_string(&crate::temporal::format_date_time(date), out),
+        Value::LocalDateTime(date) => {
+            write_string(&crate::temporal::format_local_date_time(date), out)
+        }
+        Value::LocalTime(time) => write_string(&crate::temporal::format_local_time(time), out),
+        Value::Time(time) => write_string(&crate::temporal::format_time(time), out),
+        Value::TimeZone(zone) => write_string(&zone.label(), out),
+        Value::Period(period) => write_string(&crate::temporal::format_period(period), out),
+        Value::Binary(bytes) => write_string(&crate::temporal::base64_encode(bytes), out),
+        Value::Regex(pattern) => write_string(pattern, out),
+        Value::Uri(text) | Value::Key(text) => write_string(text, out),
+    }
+}
+
 /// Writes one value at the requested indentation level.
 fn write_value(value: &Value, level: usize, out: &mut String) {
     match value {

@@ -192,11 +192,29 @@ const NAMES: &[&str] = &[
     "isObjectType",
     "mapLeafValues",
     "nodeExists",
+    "read",
+    "write",
+    "readUrl",
+    "concatWith",
+    "fromBase64",
+    "fromHex",
+    "readLinesWith",
+    "toBase64",
+    "toHex",
+    "writeLinesWith",
 ];
 
 /// Returns the canonical built-in name for a function name.
 pub fn builtin_name(name: &str) -> Option<&'static str> {
     NAMES.iter().copied().find(|candidate| *candidate == name)
+}
+
+/// Returns local name aliases for functions from an imported module.
+pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
+    match module {
+        "dw::core::Binaries" => &[("fromHex", "binariesFromHex"), ("toHex", "binariesToHex")],
+        _ => &[],
+    }
 }
 
 /// Returns the value of a built-in constant, if the name is one.
@@ -341,6 +359,33 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "isObjectType" => path_kind(args, "Object"),
         "mapLeafValues" => map_leaf_values(args),
         "nodeExists" => node_exists(args),
+        "read" => read_value(args),
+        "write" => write_value(args),
+        "readUrl" => read_url(args),
+        "concatWith" => concat_with(args),
+        "fromBase64" => Ok(Value::Binary(crate::temporal::base64_decode(&string(
+            args, 0,
+        )?)?)),
+        "fromHex" => radix_number(args, 16, false),
+        "binariesFromHex" => Ok(Value::Binary(crate::temporal::hex_decode(&string(
+            args, 0,
+        )?)?)),
+        "binariesToHex" => Ok(Value::String(crate::temporal::hex_encode(
+            value(args, 0)?
+                .as_binary()
+                .ok_or_else(|| DwError::new("expected Binary"))?,
+        ))),
+        "readLinesWith" => read_lines_with(args),
+        "toBase64" => Ok(Value::String(crate::temporal::base64_encode(
+            value(args, 0)?
+                .as_binary()
+                .ok_or_else(|| DwError::new("expected Binary"))?,
+        ))),
+        "toHex" => match value(args, 0)? {
+            Value::Binary(bytes) => Ok(Value::String(crate::temporal::hex_encode(bytes))),
+            _ => radix_string(args, 16, false),
+        },
+        "writeLinesWith" => write_lines_with(args),
         "countBy" => count_by(args),
         "sumBy" => sum_by(args),
         "some" => some(args),
@@ -452,9 +497,7 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "everyEntry" => every_entry(args),
         "someEntry" => some_entry(args),
         "mergeWith" => merge_objects(args),
-        "toHex" => radix_string(args, 16, false),
         "toBinary" => radix_string(args, 2, false),
-        "fromHex" => radix_number(args, 16, false),
         "fromBinary" => radix_number(args, 2, false),
         "fromRadixNumber" => radix_number(args, 0, true),
         "toRadixNumber" => radix_string(args, 0, true),
@@ -3308,4 +3351,341 @@ fn node_exists(args: &[RValue]) -> Result<Value, DwError> {
     let value = value(args, 0)?;
     let function = function(args, 1)?;
     Ok(Value::Bool(node_exists_inner(value, &[], function)?))
+}
+
+fn optional_object(args: &[RValue], index: usize) -> Option<Value> {
+    match args.get(index) {
+        Some(RValue::Val(value @ Value::Object(_))) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn object_property(object: Option<&Value>, key: &str) -> Option<Value> {
+    object.and_then(|value| value.get(key)).cloned()
+}
+
+fn property_string(object: Option<&Value>, key: &str) -> Option<String> {
+    match object_property(object, key) {
+        Some(Value::String(text)) => Some(text),
+        Some(other) => Some(other.key_string()),
+        None => None,
+    }
+}
+
+fn property_bool(object: Option<&Value>, key: &str, default: bool) -> bool {
+    match object_property(object, key) {
+        Some(Value::Bool(value)) => value,
+        Some(Value::String(text)) => text.eq_ignore_ascii_case("true"),
+        _ => default,
+    }
+}
+
+fn content_type(args: &[RValue], index: usize, default: &str) -> String {
+    match args.get(index) {
+        Some(RValue::Val(Value::String(text))) if !text.is_empty() => {
+            text.split(';').next().unwrap_or(text).trim().to_string()
+        }
+        _ => default.to_string(),
+    }
+}
+
+fn text_or_binary(value: &Value) -> Result<Vec<u8>, DwError> {
+    match value {
+        Value::String(text) => Ok(text.as_bytes().to_vec()),
+        Value::Binary(bytes) => Ok(bytes.clone()),
+        other => Err(DwError::new(format!(
+            "expected String or Binary, found {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn read_value(args: &[RValue]) -> Result<Value, DwError> {
+    let input = value(args, 0)?;
+    let content_type = content_type(args, 1, "application/dw");
+    let properties = optional_object(args, 2);
+    read_content(input, &content_type, properties.as_ref())
+}
+
+fn read_content(
+    input: &Value,
+    content_type: &str,
+    properties: Option<&Value>,
+) -> Result<Value, DwError> {
+    let text = || -> Result<String, DwError> {
+        match input {
+            Value::String(text) => Ok(text.clone()),
+            Value::Binary(bytes) => String::from_utf8(bytes.clone())
+                .map_err(|_| DwError::new("binary content is not valid UTF-8")),
+            other => Err(DwError::new(format!(
+                "expected String or Binary, found {}",
+                other.type_name()
+            ))),
+        }
+    };
+    match content_type {
+        "" | "application/json" | "text/json" => {
+            let text = text()?;
+            crate::json::parse(&text)
+        }
+        "application/dw" | "application/x-dw" | "text/x-dw" => {
+            let text = text()?;
+            let expression = crate::parser::parse_expression(&text)?;
+            let value = crate::eval::eval(&expression, &crate::runtime::Env::default())?;
+            crate::eval::as_value(value)
+        }
+        "text/plain" => Ok(Value::String(text()?)),
+        "application/octet-stream" | "application/x-binary" | "binary" => {
+            Ok(Value::Binary(text_or_binary(input)?))
+        }
+        "application/csv" | "text/csv" => {
+            let text = text()?;
+            Ok(read_csv(&text, properties))
+        }
+        other => Err(DwError::new(format!("unsupported content type '{other}'"))),
+    }
+}
+
+fn read_csv(text: &str, properties: Option<&Value>) -> Value {
+    let separator = property_string(properties, "separator")
+        .and_then(|text| text.chars().next())
+        .unwrap_or(',');
+    let has_header = property_bool(properties, "header", true);
+    let mut rows = text.lines().filter(|line| !line.is_empty()).map(|line| {
+        line.split(separator)
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    });
+    let headers = if has_header {
+        rows.next().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut out = Vec::new();
+    for row in rows {
+        let mut entries = Vec::new();
+        for (index, cell) in row.into_iter().enumerate() {
+            let key = headers
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| format!("column_{index}"));
+            entries.push((key, Value::String(cell)));
+        }
+        out.push(Value::Object(entries));
+    }
+    Value::Array(out)
+}
+
+fn write_value(args: &[RValue]) -> Result<Value, DwError> {
+    let value = value(args, 0)?;
+    let content_type = content_type(args, 1, "application/dw");
+    let properties = optional_object(args, 2);
+    write_content(value, &content_type, properties.as_ref())
+}
+
+fn write_content(
+    value: &Value,
+    content_type: &str,
+    properties: Option<&Value>,
+) -> Result<Value, DwError> {
+    match content_type {
+        "" | "application/json" | "text/json" => {
+            let options = crate::json::WriteOptions {
+                indent: property_bool(properties, "indent", true),
+                skip_null_on: property_string(properties, "skipNullOn"),
+                duplicate_key_as_array: property_bool(properties, "duplicateKeyAsArray", false),
+            };
+            Ok(Value::String(crate::json::write_with(value, &options)))
+        }
+        "application/dw" | "application/x-dw" | "text/x-dw" => {
+            Ok(Value::String(dw_write(value, 0)))
+        }
+        "text/plain" => Ok(Value::String(value.key_string())),
+        "application/octet-stream" | "application/x-binary" | "binary" => {
+            Ok(Value::Binary(text_or_binary(value)?))
+        }
+        other => Err(DwError::new(format!("unsupported content type '{other}'"))),
+    }
+}
+
+fn valid_dw_key(text: &str) -> bool {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_')
+}
+
+fn dw_write(value: &Value, level: usize) -> String {
+    let mut out = String::new();
+    let pad = "  ".repeat(level);
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+        Value::Number(number) => out.push_str(&number.to_string()),
+        Value::String(_) => out.push_str(&crate::json::write(value)),
+        Value::Array(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push('\n');
+                out.push_str(&"  ".repeat(level + 1));
+                out.push_str(&dw_write(item, level + 1));
+            }
+            if !items.is_empty() {
+                out.push('\n');
+                out.push_str(&pad);
+            }
+            out.push(']');
+        }
+        Value::Object(entries) => {
+            out.push('{');
+            for (index, (key, item)) in entries.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push('\n');
+                out.push_str(&"  ".repeat(level + 1));
+                if valid_dw_key(key) {
+                    out.push_str(key);
+                } else {
+                    out.push_str(&crate::json::write(&Value::String(key.clone())));
+                }
+                out.push_str(": ");
+                out.push_str(&dw_write(item, level + 1));
+            }
+            if !entries.is_empty() {
+                out.push('\n');
+                out.push_str(&pad);
+            }
+            out.push('}');
+        }
+        Value::Date(date) => out.push_str(&format!("|{}|", crate::temporal::format_date(date))),
+        Value::DateTime(date) => {
+            out.push_str(&format!("|{}|", crate::temporal::format_date_time(date)))
+        }
+        Value::LocalDateTime(date) => out.push_str(&format!(
+            "|{}|",
+            crate::temporal::format_local_date_time(date)
+        )),
+        Value::LocalTime(time) => {
+            out.push_str(&format!("|{}|", crate::temporal::format_local_time(time)))
+        }
+        Value::Time(time) => out.push_str(&format!("|{}|", crate::temporal::format_time(time))),
+        Value::TimeZone(zone) => out.push_str(&format!("|{}|", zone.label())),
+        Value::Period(period) => {
+            out.push_str(&format!("|{}|", crate::temporal::format_period(period)))
+        }
+        Value::Binary(bytes) => out.push_str(&format!(
+            "\"{}\" as Binary {{base: \"64\"}}",
+            crate::temporal::base64_encode(bytes)
+        )),
+        Value::Regex(pattern) => out.push_str(&format!("/{pattern}/")),
+        Value::Uri(text) | Value::Key(text) => out.push_str(text),
+    }
+    out
+}
+
+fn read_url(args: &[RValue]) -> Result<Value, DwError> {
+    let url = string(args, 0)?;
+    let content_type = content_type(args, 1, "application/dw");
+    let properties = optional_object(args, 2);
+    let bytes = if let Some(path) = url.strip_prefix("file://") {
+        std::fs::read(path)
+    } else if let Some(path) = url.strip_prefix("classpath://") {
+        std::fs::read(path)
+    } else if url.starts_with("http://") {
+        http_get(&url)
+    } else {
+        std::fs::read(&url)
+    }
+    .map_err(|error| DwError::new(format!("cannot read URL '{url}': {error}")))?;
+    let text =
+        String::from_utf8(bytes).map_err(|_| DwError::new("URL content is not valid UTF-8"))?;
+    read_content(&Value::String(text), &content_type, properties.as_ref())
+}
+
+fn http_get(url: &str) -> std::io::Result<Vec<u8>> {
+    use std::io::{Read, Write};
+    let rest = url.strip_prefix("http://").unwrap_or(url);
+    let (host, path) = match rest.split_once('/') {
+        Some((host, path)) => (host, format!("/{path}")),
+        None => (rest, "/".to_string()),
+    };
+    let mut stream = std::net::TcpStream::connect(host)?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+    )?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response)?;
+    let split = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| index + 4)
+        .unwrap_or(0);
+    Ok(response[split..].to_vec())
+}
+
+fn concat_with(args: &[RValue]) -> Result<Value, DwError> {
+    match (value(args, 0)?, value(args, 1)?) {
+        (Value::Binary(left), Value::Binary(right)) => {
+            let mut out = left.clone();
+            out.extend(right);
+            Ok(Value::Binary(out))
+        }
+        (Value::Null, Value::Binary(right)) => Ok(Value::Binary(right.clone())),
+        (Value::Binary(left), Value::Null) => Ok(Value::Binary(left.clone())),
+        (Value::Null, Value::Null) => Ok(Value::Null),
+        (left, right) => Err(DwError::new(format!(
+            "cannot concatenate {} and {} as binary",
+            left.type_name(),
+            right.type_name()
+        ))),
+    }
+}
+
+fn decode_charset(bytes: &[u8], charset: &str) -> Result<String, DwError> {
+    match charset.to_ascii_uppercase().replace('_', "-").as_str() {
+        "UTF-8" | "UTF8" | "US-ASCII" | "ASCII" => String::from_utf8(bytes.to_vec())
+            .map_err(|_| DwError::new("binary content is not valid UTF-8")),
+        other => Err(DwError::new(format!("unsupported charset '{other}'"))),
+    }
+}
+
+fn encode_charset(text: &str, charset: &str) -> Result<Vec<u8>, DwError> {
+    match charset.to_ascii_uppercase().replace('_', "-").as_str() {
+        "UTF-8" | "UTF8" | "US-ASCII" | "ASCII" => Ok(text.as_bytes().to_vec()),
+        other => Err(DwError::new(format!("unsupported charset '{other}'"))),
+    }
+}
+
+fn read_lines_with(args: &[RValue]) -> Result<Value, DwError> {
+    let bytes = value(args, 0)?
+        .as_binary()
+        .ok_or_else(|| DwError::new("expected Binary"))?;
+    let charset = string(args, 1)?;
+    let text = decode_charset(bytes, &charset)?;
+    let mut lines: Vec<String> = text
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line).to_string())
+        .collect();
+    if lines.last().map(|line| line.is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+    Ok(Value::Array(lines.into_iter().map(Value::String).collect()))
+}
+
+fn write_lines_with(args: &[RValue]) -> Result<Value, DwError> {
+    let lines = array(args, 0)?;
+    let charset = string(args, 1)?;
+    let mut text = String::new();
+    for line in lines {
+        text.push_str(&line.key_string());
+        text.push('\n');
+    }
+    Ok(Value::Binary(encode_charset(&text, &charset)?))
 }

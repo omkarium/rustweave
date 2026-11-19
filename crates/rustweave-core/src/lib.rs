@@ -197,6 +197,11 @@ impl Interp {
     pub fn eval(&self, script: &str, inputs: &[(&str, &str)]) -> Result<Value, DwError> {
         let parsed = parser::parse_script(script)?;
         let mut env = self.globals.clone();
+        for module in &parsed.imports {
+            for (local, builtin) in stdlib::module_aliases(module) {
+                env = env.extend(*local, RValue::Builtin(builtin));
+            }
+        }
         for (name, text) in inputs {
             let value = json::parse(text)
                 .map_err(|error| DwError::new(format!("input '{name}': {error}")))?;
