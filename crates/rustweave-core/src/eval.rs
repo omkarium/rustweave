@@ -1206,6 +1206,15 @@ fn period_to_number(
     }
 }
 
+/// Converts a value to a named type with optional cast options.
+pub fn cast_value(
+    value: Value,
+    type_name: &str,
+    options: Option<&Value>,
+) -> Result<Value, DwError> {
+    cast(value, type_name, options)
+}
+
 /// Converts a value with `as`, supporting scalar, collection, temporal, and binary types.
 fn cast(value: Value, type_name: &str, options: Option<&Value>) -> Result<Value, DwError> {
     let base = type_name.split('{').next().unwrap_or(type_name).trim();

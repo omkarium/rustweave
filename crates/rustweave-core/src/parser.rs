@@ -386,7 +386,7 @@ impl Parser {
                         left = self.parse_match(left)?;
                     } else if is_reserved(&name) {
                         break;
-                    } else if name == "with" && is_replace_call(&left) {
+                    } else if name == "with" && is_with_call(&left) {
                         self.advance();
                         let arg = self.parse_expr(0)?;
                         left = append_replace_arg(left, vec![arg])?;
@@ -842,12 +842,13 @@ fn validate_match_tail(pattern: &Expr) -> Result<(), DwError> {
     }
 }
 
-/// Returns whether an expression is a `replace` or `replaceAll` call.
-fn is_replace_call(expr: &Expr) -> bool {
+/// Returns whether an expression is a call that accepts a trailing `with` argument.
+fn is_with_call(expr: &Expr) -> bool {
+    let accepted = |name: &str| matches!(name, "replace" | "replaceAll" | "update" | "mask");
     match expr {
-        Expr::Infix(name, _, _) => name == "replace" || name == "replaceAll",
+        Expr::Infix(name, _, _) => accepted(name),
         Expr::Call(callee, _) => {
-            matches!(callee.as_ref(), Expr::Var(name) if name == "replace" || name == "replaceAll")
+            matches!(callee.as_ref(), Expr::Var(name) if accepted(name))
         }
         _ => false,
     }

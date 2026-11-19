@@ -202,6 +202,32 @@ const NAMES: &[&str] = &[
     "toBase64",
     "toHex",
     "writeLinesWith",
+    "toArray",
+    "toBinary",
+    "toBoolean",
+    "toDate",
+    "toDateOrNull",
+    "toDateTime",
+    "toDateTimeOrNull",
+    "toLocalDateTime",
+    "toLocalDateTimeOrNull",
+    "toLocalTime",
+    "toLocalTimeOrNull",
+    "toNumber",
+    "toNumberOrNull",
+    "toPeriod",
+    "toRegex",
+    "toString",
+    "toTime",
+    "toTimeOrNull",
+    "toTimeZone",
+    "toURI",
+    "toUri",
+    "attr",
+    "field",
+    "index",
+    "mask",
+    "update",
 ];
 
 /// Returns the canonical built-in name for a function name.
@@ -237,6 +263,7 @@ pub fn lambda_positions(name: &str) -> &'static [usize] {
         | "countCharactersBy" | "everyCharacter" | "someCharacter" | "mapString"
         | "substringBy" | "filterArrayLeafs" | "filterObjectLeafs" | "filterTree"
         | "mapLeafValues" | "nodeExists" | "sort" => &[1],
+        "update" | "mask" => &[2],
         "join" | "leftJoin" | "outerJoin" => &[2, 3],
         _ => &[],
     }
@@ -386,6 +413,29 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
             _ => radix_string(args, 16, false),
         },
         "writeLinesWith" => write_lines_with(args),
+        "toArray" => to_array(args),
+        "toBoolean" => coerce(args, "Boolean", false),
+        "toDate" => coerce_with_formatters(args, "Date", false),
+        "toDateOrNull" => coerce_with_formatters(args, "Date", true),
+        "toDateTime" => coerce_with_formatters(args, "DateTime", false),
+        "toDateTimeOrNull" => coerce_with_formatters(args, "DateTime", true),
+        "toLocalDateTime" => coerce_with_formatters(args, "LocalDateTime", false),
+        "toLocalDateTimeOrNull" => coerce_with_formatters(args, "LocalDateTime", true),
+        "toLocalTime" => coerce_with_formatters(args, "LocalTime", false),
+        "toLocalTimeOrNull" => coerce_with_formatters(args, "LocalTime", true),
+        "toNumber" => coerce_with_formatters(args, "Number", false),
+        "toNumberOrNull" => coerce_with_formatters(args, "Number", true),
+        "toPeriod" => coerce(args, "Period", false),
+        "toRegex" => coerce(args, "Regex", false),
+        "toString" => to_string(args),
+        "toTime" => coerce_with_formatters(args, "Time", false),
+        "toTimeOrNull" => coerce_with_formatters(args, "Time", true),
+        "toTimeZone" => coerce(args, "TimeZone", false),
+        "toURI" | "toUri" => coerce(args, "Uri", false),
+        "attr" => value_path_element(args, "Attribute"),
+        "field" => value_path_element(args, "Object"),
+        "index" => value_index(args),
+        "mask" | "update" => update_value(args),
         "countBy" => count_by(args),
         "sumBy" => sum_by(args),
         "some" => some(args),
@@ -497,7 +547,10 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "everyEntry" => every_entry(args),
         "someEntry" => some_entry(args),
         "mergeWith" => merge_objects(args),
-        "toBinary" => radix_string(args, 2, false),
+        "toBinary" => match value(args, 0)? {
+            Value::String(text) => Ok(Value::Binary(text.as_bytes().to_vec())),
+            _ => radix_string(args, 2, false),
+        },
         "fromBinary" => radix_number(args, 2, false),
         "fromRadixNumber" => radix_number(args, 0, true),
         "toRadixNumber" => radix_string(args, 0, true),
@@ -3688,4 +3741,327 @@ fn write_lines_with(args: &[RValue]) -> Result<Value, DwError> {
         text.push('\n');
     }
     Ok(Value::Binary(encode_charset(&text, &charset)?))
+}
+
+fn value_path_element(args: &[RValue], kind: &str) -> Result<Value, DwError> {
+    let (namespace, name) = match args.len() {
+        0 => return Err(DwError::new("missing name")),
+        1 => (Value::Null, value(args, 0)?.clone()),
+        _ => (value(args, 0)?.clone(), value(args, 1)?.clone()),
+    };
+    Ok(Value::Object(vec![
+        ("kind".to_string(), Value::String(kind.to_string())),
+        ("namespace".to_string(), namespace),
+        ("selector".to_string(), Value::String(name.key_string())),
+    ]))
+}
+
+fn value_index(args: &[RValue]) -> Result<Value, DwError> {
+    Ok(Value::Object(vec![
+        ("kind".to_string(), Value::String("Array".to_string())),
+        ("namespace".to_string(), Value::Null),
+        ("selector".to_string(), Value::Number(number(args, 0)?)),
+    ]))
+}
+
+fn to_array(args: &[RValue]) -> Result<Value, DwError> {
+    match value(args, 0)? {
+        Value::String(text) => Ok(Value::Array(
+            text.chars().map(|c| Value::String(c.to_string())).collect(),
+        )),
+        Value::Array(_) => Ok(value(args, 0)?.clone()),
+        Value::Null => Ok(Value::Array(Vec::new())),
+        other => Ok(Value::Array(vec![other.clone()])),
+    }
+}
+
+fn options_object(entries: Vec<(&str, Value)>) -> Value {
+    Value::Object(
+        entries
+            .into_iter()
+            .filter(|(_, value)| !value.is_null())
+            .map(|(key, value)| (key.to_string(), value))
+            .collect(),
+    )
+}
+
+fn coercion_options(args: &[RValue], target: &str) -> Option<Value> {
+    match args.get(1) {
+        Some(RValue::Val(Value::Object(entries))) => Some(Value::Object(entries.clone())),
+        Some(RValue::Val(Value::String(text))) if !text.is_empty() => {
+            let key = match target {
+                "Number" => match args.first() {
+                    Some(RValue::Val(Value::DateTime(_) | Value::Period(_))) => "unit",
+                    _ => "format",
+                },
+                _ => "format",
+            };
+            Some(options_object(vec![(key, Value::String(text.clone()))]))
+        }
+        _ => None,
+    }
+}
+
+fn coerce(args: &[RValue], target: &str, or_null: bool) -> Result<Value, DwError> {
+    let value = value(args, 0)?.clone();
+    let options = coercion_options(args, target);
+    match crate::eval::cast_value(value, target, options.as_ref()) {
+        Ok(value) => Ok(value),
+        Err(error) if or_null => {
+            let _ = error;
+            Ok(Value::Null)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn coerce_with_formatters(args: &[RValue], target: &str, or_null: bool) -> Result<Value, DwError> {
+    if let Some(RValue::Val(Value::Array(formatters))) = args.get(1) {
+        for formatter in formatters {
+            let options = match formatter {
+                Value::Object(entries) => Value::Object(entries.clone()),
+                Value::String(text) => {
+                    options_object(vec![("format", Value::String(text.clone()))])
+                }
+                _ => continue,
+            };
+            if let Ok(value) =
+                crate::eval::cast_value(value(args, 0)?.clone(), target, Some(&options))
+            {
+                return Ok(value);
+            }
+        }
+        if or_null {
+            return Ok(Value::Null);
+        }
+        return Err(DwError::new(format!(
+            "could not find a valid formatter for '{}'",
+            value(args, 0)?.key_string()
+        )));
+    }
+    coerce(args, target, or_null)
+}
+
+fn to_string(args: &[RValue]) -> Result<Value, DwError> {
+    let input = value(args, 0)?.clone();
+    if let Value::Binary(bytes) = &input {
+        if let Some(RValue::Val(Value::String(charset))) = args.get(1) {
+            return decode_charset(bytes, charset).map(Value::String);
+        }
+    }
+    let options = coercion_options(args, "String");
+    crate::eval::cast_value(input, "String", options.as_ref())
+}
+
+fn update_selector(selector: &Value) -> Result<Value, DwError> {
+    match selector {
+        Value::String(_) | Value::Number(_) => Ok(selector.clone()),
+        Value::Object(_) => Ok(selector.clone()),
+        Value::Array(_) => Ok(selector.clone()),
+        other => Err(DwError::new(format!(
+            "invalid update selector {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn selector_kind(selector: &Value) -> Option<(String, Value)> {
+    let entries = selector.as_object()?;
+    let part = |name: &str| {
+        entries
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
+    };
+    Some((part("kind")?.key_string(), part("selector")?))
+}
+
+fn apply_updater(new_value: &RValue, old: &Value, index: usize) -> Result<Value, DwError> {
+    match new_value {
+        RValue::Val(value) => Ok(value.clone()),
+        RValue::Func(_) | RValue::Builtin(_) | RValue::Overloads(_) => call_fn(
+            new_value,
+            vec![old.clone(), Value::Number(Number::from_usize(index))],
+        ),
+        RValue::Regex(_) => Err(DwError::new("a regular expression is not a value provider")),
+    }
+}
+
+fn update_field(
+    object: &Value,
+    field: &str,
+    updater: &RValue,
+    index: usize,
+) -> Result<Value, DwError> {
+    let mut object = object.clone();
+    match &object {
+        Value::Object(entries) => {
+            let old = entries
+                .iter()
+                .rev()
+                .find(|(key, _)| key == field)
+                .map(|(_, value)| value.clone())
+                .unwrap_or(Value::Null);
+            let new = apply_updater(updater, &old, index)?;
+            object.insert(field.to_string(), new);
+            Ok(object)
+        }
+        _ => Err(DwError::new("expected an Object")),
+    }
+}
+
+fn update_at(
+    value: &Value,
+    selector: &Value,
+    updater: &RValue,
+    index: usize,
+) -> Result<Value, DwError> {
+    if let Value::Array(path) = selector {
+        if path.is_empty() {
+            return apply_updater(updater, value, index);
+        }
+        let first = update_selector(&path[0])?;
+        let rest = if path.len() > 1 {
+            Value::Array(path[1..].to_vec())
+        } else {
+            Value::Null
+        };
+        let old = get_at(value, &first)?;
+        let new = if rest.is_null() {
+            apply_updater(updater, &old, index)?
+        } else {
+            update_at(&old, &rest, updater, index)?
+        };
+        return set_at(value, &first, new);
+    }
+    if let Some((kind, selector)) = selector_kind(selector) {
+        return match kind.as_str() {
+            "Array" => update_at(value, &selector, updater, index),
+            _ => match value {
+                Value::Object(_) => update_field(value, &selector.key_string(), updater, index),
+                Value::Array(items) => {
+                    let mut out = Vec::with_capacity(items.len());
+                    for item in items {
+                        out.push(update_field(item, &selector.key_string(), updater, index)?);
+                    }
+                    Ok(Value::Array(out))
+                }
+                _ => Err(DwError::new("expected an Object or Array")),
+            },
+        };
+    }
+    match (value, selector) {
+        (Value::Object(_), Value::String(field)) => update_field(value, field, updater, index),
+        (Value::Array(items), Value::Number(number)) => {
+            let position = number
+                .to_i64()
+                .ok_or_else(|| DwError::new("array index must be an integer"))?;
+            let position = if position < 0 {
+                items.len() as i64 + position
+            } else {
+                position
+            };
+            if position < 0 || position as usize >= items.len() {
+                return Err(DwError::new("array index is out of range"));
+            }
+            let position = position as usize;
+            let new = apply_updater(updater, &items[position], position)?;
+            let mut out = items.clone();
+            out[position] = new;
+            Ok(Value::Array(out))
+        }
+        (Value::Array(items), Value::String(field)) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(update_field(item, field, updater, index)?);
+            }
+            Ok(Value::Array(out))
+        }
+        (Value::Null, Value::String(field)) => {
+            let mut object = Value::Object(Vec::new());
+            object.insert(field.clone(), apply_updater(updater, &Value::Null, index)?);
+            Ok(object)
+        }
+        _ => Err(DwError::new("cannot update this value with the selector")),
+    }
+}
+
+fn get_at(value: &Value, selector: &Value) -> Result<Value, DwError> {
+    match (value, selector) {
+        (Value::Object(_), Value::String(field)) => {
+            Ok(value.get(field).cloned().unwrap_or(Value::Null))
+        }
+        (Value::Array(items), Value::Number(number)) => {
+            let position = number
+                .to_i64()
+                .ok_or_else(|| DwError::new("array index must be an integer"))?;
+            let position = if position < 0 {
+                items.len() as i64 + position
+            } else {
+                position
+            };
+            Ok(items.get(position as usize).cloned().unwrap_or(Value::Null))
+        }
+        (_, Value::Object(_)) => {
+            if let Some((kind, selector)) = selector_kind(selector) {
+                if kind == "Array" {
+                    get_at(value, &selector)
+                } else {
+                    get_at(value, &Value::String(selector.key_string()))
+                }
+            } else {
+                Ok(Value::Null)
+            }
+        }
+        _ => Ok(Value::Null),
+    }
+}
+
+fn set_at(value: &Value, selector: &Value, new: Value) -> Result<Value, DwError> {
+    match (value, selector) {
+        (Value::Object(_), Value::String(field)) => {
+            let mut object = value.clone();
+            object.insert(field.clone(), new);
+            Ok(object)
+        }
+        (Value::Array(items), Value::Number(number)) => {
+            let position = number
+                .to_i64()
+                .ok_or_else(|| DwError::new("array index must be an integer"))?;
+            let position = if position < 0 {
+                items.len() as i64 + position
+            } else {
+                position
+            };
+            if position < 0 || position as usize >= items.len() {
+                return Err(DwError::new("array index is out of range"));
+            }
+            let mut out = items.clone();
+            out[position as usize] = new;
+            Ok(Value::Array(out))
+        }
+        (_, Value::Object(_)) => {
+            if let Some((kind, selector)) = selector_kind(selector) {
+                if kind == "Array" {
+                    set_at(value, &selector, new)
+                } else {
+                    set_at(value, &Value::String(selector.key_string()), new)
+                }
+            } else {
+                Err(DwError::new("invalid update selector"))
+            }
+        }
+        _ => Err(DwError::new("cannot update this value with the selector")),
+    }
+}
+
+fn update_value(args: &[RValue]) -> Result<Value, DwError> {
+    let target = value(args, 0)?;
+    let selector = value(args, 1)?;
+    let updater = args
+        .get(2)
+        .ok_or_else(|| DwError::new("missing update value"))?;
+    let selector = update_selector(selector)?;
+    update_at(target, &selector, updater, 0)
 }
