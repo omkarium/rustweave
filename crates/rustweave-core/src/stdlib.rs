@@ -296,6 +296,12 @@ const NAMES: &[&str] = &[
     "unionItems",
 ];
 
+/// Returns every name understood by the runtime dispatcher.
+#[cfg(test)]
+pub(crate) fn registry_names() -> &'static [&'static str] {
+    NAMES
+}
+
 /// Returns the canonical built-in name for a function name.
 pub fn builtin_name(name: &str) -> Option<&'static str> {
     NAMES.iter().copied().find(|candidate| *candidate == name)

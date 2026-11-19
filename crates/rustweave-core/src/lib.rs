@@ -100,6 +100,23 @@
 //! assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 //! ```
 //!
+//! # Supported function catalog
+//!
+//! [`functions::Function`] describes one supported function with its exact DataWeave name,
+//! namespace, and a short description. The complete list is [`functions::Function::ALL`].
+//!
+//! ```
+//! use rustweave_core::functions::Function;
+//!
+//! let core_names: Vec<_> = Function::ALL
+//!     .iter()
+//!     .filter(|function| function.namespace == "dw::Core")
+//!     .map(|function| function.name)
+//!     .collect();
+//! assert!(core_names.contains(&"map"));
+//! assert_eq!(Function::CORE_MAP.namespace, "dw::Core");
+//! ```
+//!
 //! # What is supported
 //!
 //! - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
@@ -144,6 +161,7 @@
 
 #![deny(dead_code)]
 
+pub mod functions;
 pub mod json;
 
 mod ast;
