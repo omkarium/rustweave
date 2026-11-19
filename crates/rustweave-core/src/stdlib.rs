@@ -183,11 +183,30 @@ const NAMES: &[&str] = &[
     "daysBetween",
     "isLeapYear",
     "now",
+    "asExpressionString",
+    "filterArrayLeafs",
+    "filterObjectLeafs",
+    "filterTree",
+    "isArrayType",
+    "isAttributeType",
+    "isObjectType",
+    "mapLeafValues",
+    "nodeExists",
 ];
 
 /// Returns the canonical built-in name for a function name.
 pub fn builtin_name(name: &str) -> Option<&'static str> {
     NAMES.iter().copied().find(|candidate| *candidate == name)
+}
+
+/// Returns the value of a built-in constant, if the name is one.
+pub fn constant(name: &str) -> Option<Value> {
+    match name {
+        "ARRAY_TYPE" => Some(Value::String("Array".to_string())),
+        "ATTRIBUTE_TYPE" => Some(Value::String("Attribute".to_string())),
+        "OBJECT_TYPE" => Some(Value::String("Object".to_string())),
+        _ => None,
+    }
 }
 
 /// Returns the argument positions that accept a lambda.
@@ -198,7 +217,8 @@ pub fn lambda_positions(name: &str) -> &'static [usize] {
         | "scan" | "countBy" | "sumBy" | "some" | "every" | "indexWhere" | "takeWhile"
         | "dropWhile" | "partition" | "firstWith" | "splitWhere" | "everyEntry" | "someEntry"
         | "countCharactersBy" | "everyCharacter" | "someCharacter" | "mapString"
-        | "substringBy" | "sort" => &[1],
+        | "substringBy" | "filterArrayLeafs" | "filterObjectLeafs" | "filterTree"
+        | "mapLeafValues" | "nodeExists" | "sort" => &[1],
         "join" | "leftJoin" | "outerJoin" => &[2, 3],
         _ => &[],
     }
@@ -312,6 +332,15 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "daysBetween" => days_between(args),
         "isLeapYear" => is_leap_year(args),
         "now" => Ok(Value::DateTime(crate::temporal::now())),
+        "asExpressionString" => as_expression_string(args),
+        "filterArrayLeafs" => filter_array_leafs(args),
+        "filterObjectLeafs" => filter_object_leafs(args),
+        "filterTree" => filter_tree(args),
+        "isArrayType" => path_kind(args, "Array"),
+        "isAttributeType" => path_kind(args, "Attribute"),
+        "isObjectType" => path_kind(args, "Object"),
+        "mapLeafValues" => map_leaf_values(args),
+        "nodeExists" => node_exists(args),
         "countBy" => count_by(args),
         "sumBy" => sum_by(args),
         "some" => some(args),
@@ -3030,4 +3059,253 @@ fn is_leap_year(args: &[RValue]) -> Result<Value, DwError> {
     let year = year_of(value(args, 0)?)?;
     let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
     Ok(Value::Bool(leap))
+}
+
+fn path_element(kind: &str, selector: Value) -> Value {
+    Value::Object(vec![
+        ("kind".to_string(), Value::String(kind.to_string())),
+        ("selector".to_string(), selector),
+        ("namespace".to_string(), Value::Null),
+    ])
+}
+
+fn path_append(path: &[Value], kind: &str, selector: Value) -> Vec<Value> {
+    let mut next = path.to_vec();
+    next.push(path_element(kind, selector));
+    next
+}
+
+fn path_kind(args: &[RValue], kind: &str) -> Result<Value, DwError> {
+    let path = array(args, 0)?;
+    let matches = path
+        .last()
+        .and_then(Value::as_object)
+        .and_then(|entries| {
+            entries
+                .iter()
+                .rev()
+                .find(|(name, _)| name == "kind")
+                .map(|(_, value)| value)
+        })
+        .map(|value| value.key_string() == kind)
+        .unwrap_or(false);
+    Ok(Value::Bool(matches))
+}
+
+fn as_expression_string(args: &[RValue]) -> Result<Value, DwError> {
+    let path = array(args, 0)?;
+    let mut out = String::new();
+    for element in path {
+        let entries = element
+            .as_object()
+            .ok_or_else(|| DwError::new("expected a Path element"))?;
+        let part = |name: &str| {
+            entries
+                .iter()
+                .rev()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value)
+        };
+        let kind = part("kind").map(Value::key_string).unwrap_or_default();
+        let selector = part("selector").map(Value::key_string).unwrap_or_default();
+        match kind.as_str() {
+            "Object" => {
+                out.push('.');
+                out.push_str(&selector);
+            }
+            "Attribute" => {
+                out.push_str(".@");
+                out.push_str(&selector);
+            }
+            "Array" => {
+                out.push('[');
+                out.push_str(&selector);
+                out.push(']');
+            }
+            _ => {}
+        }
+    }
+    Ok(Value::String(out))
+}
+
+fn tree_callback(function: &RValue, value: &Value, path: &[Value]) -> Result<Value, DwError> {
+    call_fn(function, vec![value.clone(), Value::Array(path.to_vec())])
+}
+
+fn map_leaf_value(value: &Value, path: &[Value], function: &RValue) -> Result<Value, DwError> {
+    match value {
+        Value::Object(entries) => {
+            let mut out = Vec::with_capacity(entries.len());
+            for (key, child) in entries {
+                let next = path_append(path, "Object", Value::String(key.clone()));
+                let mapped = match child {
+                    Value::Object(_) | Value::Array(_) => map_leaf_value(child, &next, function)?,
+                    _ => tree_callback(function, child, &next)?,
+                };
+                out.push((key.clone(), mapped));
+            }
+            Ok(Value::Object(out))
+        }
+        Value::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for (index, child) in items.iter().enumerate() {
+                let next = path_append(path, "Array", Value::Number(Number::from_usize(index)));
+                let mapped = match child {
+                    Value::Object(_) | Value::Array(_) => map_leaf_value(child, &next, function)?,
+                    _ => tree_callback(function, child, &next)?,
+                };
+                out.push(mapped);
+            }
+            Ok(Value::Array(out))
+        }
+        _ => tree_callback(function, value, path),
+    }
+}
+
+fn map_leaf_values(args: &[RValue]) -> Result<Value, DwError> {
+    let value = value(args, 0)?;
+    let function = function(args, 1)?;
+    map_leaf_value(value, &[], function)
+}
+
+fn filter_array_leaf(value: &Value, path: &[Value], function: &RValue) -> Result<Value, DwError> {
+    match value {
+        Value::Object(entries) => {
+            let mut out = Vec::with_capacity(entries.len());
+            for (key, child) in entries {
+                let next = path_append(path, "Object", Value::String(key.clone()));
+                out.push((key.clone(), filter_array_leaf(child, &next, function)?));
+            }
+            Ok(Value::Object(out))
+        }
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for (index, child) in items.iter().enumerate() {
+                let next = path_append(path, "Array", Value::Number(Number::from_usize(index)));
+                let keep = match child {
+                    Value::Object(_) | Value::Array(_) => true,
+                    _ => tree_callback(function, child, &next)?.truthy(),
+                };
+                if keep {
+                    out.push(filter_array_leaf(child, &next, function)?);
+                }
+            }
+            Ok(Value::Array(out))
+        }
+        _ => Ok(value.clone()),
+    }
+}
+
+fn filter_array_leafs(args: &[RValue]) -> Result<Value, DwError> {
+    let value = value(args, 0)?;
+    let function = function(args, 1)?;
+    filter_array_leaf(value, &[], function)
+}
+
+fn filter_object_leaf(value: &Value, path: &[Value], function: &RValue) -> Result<Value, DwError> {
+    match value {
+        Value::Object(entries) => {
+            let mut out = Vec::new();
+            for (key, child) in entries {
+                let next = path_append(path, "Object", Value::String(key.clone()));
+                let keep = match child {
+                    Value::Object(_) | Value::Array(_) => true,
+                    _ => tree_callback(function, child, &next)?.truthy(),
+                };
+                if keep {
+                    out.push((key.clone(), filter_object_leaf(child, &next, function)?));
+                }
+            }
+            Ok(Value::Object(out))
+        }
+        Value::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for (index, child) in items.iter().enumerate() {
+                let next = path_append(path, "Array", Value::Number(Number::from_usize(index)));
+                out.push(filter_object_leaf(child, &next, function)?);
+            }
+            Ok(Value::Array(out))
+        }
+        _ => Ok(value.clone()),
+    }
+}
+
+fn filter_object_leafs(args: &[RValue]) -> Result<Value, DwError> {
+    let value = value(args, 0)?;
+    let function = function(args, 1)?;
+    filter_object_leaf(value, &[], function)
+}
+
+fn filter_tree_node(
+    value: &Value,
+    path: &[Value],
+    function: &RValue,
+) -> Result<Option<Value>, DwError> {
+    if !tree_callback(function, value, path)?.truthy() {
+        return Ok(None);
+    }
+    match value {
+        Value::Object(entries) => {
+            let mut out = Vec::new();
+            for (key, child) in entries {
+                let next = path_append(path, "Object", Value::String(key.clone()));
+                if let Some(value) = filter_tree_node(child, &next, function)? {
+                    out.push((key.clone(), value));
+                }
+            }
+            Ok(Some(Value::Object(out)))
+        }
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for (index, child) in items.iter().enumerate() {
+                let next = path_append(path, "Array", Value::Number(Number::from_usize(index)));
+                if let Some(value) = filter_tree_node(child, &next, function)? {
+                    out.push(value);
+                }
+            }
+            Ok(Some(Value::Array(out)))
+        }
+        _ => Ok(Some(value.clone())),
+    }
+}
+
+fn filter_tree(args: &[RValue]) -> Result<Value, DwError> {
+    let value = value(args, 0)?;
+    let function = function(args, 1)?;
+    if !matches!(value, Value::Object(_) | Value::Array(_)) {
+        return Ok(value.clone());
+    }
+    Ok(filter_tree_node(value, &[], function)?.unwrap_or(Value::Null))
+}
+
+fn node_exists_inner(value: &Value, path: &[Value], function: &RValue) -> Result<bool, DwError> {
+    if tree_callback(function, value, path)?.truthy() {
+        return Ok(true);
+    }
+    match value {
+        Value::Object(entries) => {
+            for (key, child) in entries {
+                let next = path_append(path, "Object", Value::String(key.clone()));
+                if node_exists_inner(child, &next, function)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for (index, child) in items.iter().enumerate() {
+                let next = path_append(path, "Array", Value::Number(Number::from_usize(index)));
+                if node_exists_inner(child, &next, function)? {
+                    return Ok(true);
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+fn node_exists(args: &[RValue]) -> Result<Value, DwError> {
+    let value = value(args, 0)?;
+    let function = function(args, 1)?;
+    Ok(Value::Bool(node_exists_inner(value, &[], function)?))
 }

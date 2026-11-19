@@ -38,6 +38,9 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
             if let Some(value) = env.lookup(name) {
                 return Ok(value);
             }
+            if let Some(value) = stdlib::constant(name) {
+                return Ok(RValue::Val(value));
+            }
             if let Some(builtin) = stdlib::builtin_name(name) {
                 return Ok(RValue::Builtin(builtin));
             }
