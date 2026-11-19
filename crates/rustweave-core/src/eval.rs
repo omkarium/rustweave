@@ -578,8 +578,12 @@ fn eval_binary(op: BinOp, left: &Expr, right: &Expr, env: &Env) -> Result<RValue
             ))),
         },
         BinOp::Difference => difference(left, right),
-        BinOp::Equal => Ok(RValue::Val(Value::Bool(left == right))),
-        BinOp::NotEqual => Ok(RValue::Val(Value::Bool(left != right))),
+        BinOp::Equal => Ok(RValue::Val(Value::Bool(
+            left.unwrap_formatted() == right.unwrap_formatted(),
+        ))),
+        BinOp::NotEqual => Ok(RValue::Val(Value::Bool(
+            left.unwrap_formatted() != right.unwrap_formatted(),
+        ))),
         BinOp::Less | BinOp::LessEqual | BinOp::Greater | BinOp::GreaterEqual => {
             let ordering = compare_values(&left, &right).ok_or_else(|| {
                 DwError::new(format!(
@@ -693,6 +697,9 @@ fn add_period(
 
 /// Implements `+`, including array append and numeric-string coercion.
 fn add(left: Value, right: Value) -> Result<RValue, DwError> {
+    // Arithmetic consumes the ISO value and produces a fresh unformatted result.
+    let left = left.unwrap_formatted().clone();
+    let right = right.unwrap_formatted().clone();
     if let Value::Array(mut items) = left {
         items.push(right);
         return Ok(RValue::Val(Value::Array(items)));
@@ -725,6 +732,9 @@ fn add(left: Value, right: Value) -> Result<RValue, DwError> {
 
 /// Implements `-`, including array removal and numeric-string coercion.
 fn subtract(left: Value, right: Value) -> Result<RValue, DwError> {
+    // Arithmetic consumes the ISO value and produces a fresh unformatted result.
+    let left = left.unwrap_formatted().clone();
+    let right = right.unwrap_formatted().clone();
     if let Value::Array(items) = left {
         let filtered = items
             .into_iter()
@@ -859,6 +869,8 @@ pub fn difference_values(left: Value, right: Value) -> Result<Value, DwError> {
 
 /// Implements `++` for arrays, objects, and scalars.
 fn concat(left: Value, right: Value) -> Result<RValue, DwError> {
+    let left = left.unwrap_formatted().clone();
+    let right = right.unwrap_formatted().clone();
     if matches!(left, Value::Null) || matches!(right, Value::Null) {
         return Err(DwError::new("cannot concatenate null"));
     }
@@ -931,6 +943,8 @@ fn is_scalar(value: &Value) -> bool {
 
 /// Compares two values, coercing numeric strings to numbers.
 fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
+    let left = left.unwrap_formatted();
+    let right = right.unwrap_formatted();
     match (left, right) {
         (Value::Number(a), Value::Number(b)) => Some(a.cmp(b)),
         (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
@@ -948,6 +962,7 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
 
 /// Tests a value against a DataWeave type name.
 fn is_type(value: &Value, type_name: &str) -> bool {
+    let value = value.unwrap_formatted();
     let base = type_name.split('{').next().unwrap_or(type_name).trim();
     match base {
         "Any" => true,
@@ -991,6 +1006,8 @@ fn option_text(options: Option<&Value>, key: &str) -> Option<String> {
 }
 
 fn temporal_string(value: &Value, format: Option<&str>) -> String {
+    // String casts deliberately ignore any format stored by an earlier parse.
+    let value = value.unwrap_formatted();
     let pattern = format.unwrap_or("");
     match value {
         Value::Date(date) => {
@@ -1045,11 +1062,22 @@ fn pattern_from(options: Option<&Value>) -> Option<String> {
     option_text(options, "format").or_else(|| option_text(options, "unit"))
 }
 
+fn formatted_display(input: &Value, result: &Value, format: Option<&str>) -> Option<String> {
+    let pattern = format.filter(|pattern| !pattern.is_empty())?;
+    match input {
+        // Parsing a string keeps the original text exactly as supplied.
+        Value::String(text) => Some(text.clone()),
+        // Reformatting an existing temporal value applies the requested pattern.
+        _ => Some(temporal_string(result, Some(pattern))),
+    }
+}
+
 fn parse_date_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
-    match value {
-        Value::Date(_) => Ok(value.clone()),
-        Value::DateTime(date) => Ok(Value::Date(date.date)),
-        Value::LocalDateTime(date) => Ok(Value::Date(date.date)),
+    let value = value.unwrap_formatted();
+    let date = match value {
+        Value::Date(date) => *date,
+        Value::DateTime(date) => date.date,
+        Value::LocalDateTime(date) => date.date,
         Value::String(text) => {
             let parsed = match format {
                 Some(pattern) if !pattern.is_empty() => {
@@ -1058,133 +1086,162 @@ fn parse_date_value(value: &Value, format: Option<&str>) -> Result<Value, DwErro
                 _ => crate::temporal::parse_date(text)
                     .or_else(|| crate::temporal::parse_date_pattern(text, "uuuu/MM/dd")),
             };
-            parsed
-                .map(Value::Date)
-                .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Date")))
+            parsed.ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Date")))?
         }
-        other => Err(DwError::new(format!(
-            "cannot convert {} to Date",
-            other.type_name()
-        ))),
-    }
+        other => {
+            return Err(DwError::new(format!(
+                "cannot convert {} to Date",
+                other.type_name()
+            )))
+        }
+    };
+    let result = Value::Date(date);
+    let display = formatted_display(value, &result, format);
+    Ok(result.apply_format(display.as_deref()))
 }
 
 fn parse_date_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
-    match value {
-        Value::DateTime(_) => Ok(value.clone()),
-        Value::LocalDateTime(date) => Ok(Value::DateTime(crate::temporal::DateTime {
+    let value = value.unwrap_formatted();
+    let date_time = match value {
+        Value::DateTime(date) => date.clone(),
+        Value::LocalDateTime(date) => crate::temporal::DateTime {
             date: date.date,
             time: date.time,
             zone: crate::temporal::Zone::utc(),
-        })),
+        },
         Value::String(text) => {
             if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
-                return crate::temporal::parse_date_time_pattern(text, pattern)
-                    .map(Value::DateTime)
-                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to DateTime")));
-            }
-            match crate::temporal::parse_literal(text) {
-                Some(Value::DateTime(value)) => Ok(Value::DateTime(value)),
-                _ => crate::temporal::parse_date_time_pattern(text, "uuuu-MM-dd'T'HH:mm:ssXXX")
-                    .or_else(|| {
-                        crate::temporal::parse_date_time_pattern(text, "uuuu-MM-dd HH:mm:ssXXX")
-                    })
-                    .map(Value::DateTime)
-                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to DateTime"))),
+                crate::temporal::parse_date_time_pattern(text, pattern)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to DateTime")))?
+            } else {
+                match crate::temporal::parse_literal(text) {
+                    Some(Value::DateTime(value)) => value,
+                    _ => crate::temporal::parse_date_time_pattern(text, "uuuu-MM-dd'T'HH:mm:ssXXX")
+                        .or_else(|| {
+                            crate::temporal::parse_date_time_pattern(text, "uuuu-MM-dd HH:mm:ssXXX")
+                        })
+                        .ok_or_else(|| {
+                            DwError::new(format!("cannot convert '{text}' to DateTime"))
+                        })?,
+                }
             }
         }
-        other => Err(DwError::new(format!(
-            "cannot convert {} to DateTime",
-            other.type_name()
-        ))),
-    }
+        other => {
+            return Err(DwError::new(format!(
+                "cannot convert {} to DateTime",
+                other.type_name()
+            )))
+        }
+    };
+    let result = Value::DateTime(date_time);
+    let display = formatted_display(value, &result, format);
+    Ok(result.apply_format(display.as_deref()))
 }
 
 fn parse_local_date_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
-    match value {
-        Value::LocalDateTime(_) => Ok(value.clone()),
-        Value::DateTime(date) => Ok(Value::LocalDateTime(crate::temporal::LocalDateTime {
+    let value = value.unwrap_formatted();
+    let date_time = match value {
+        Value::LocalDateTime(date) => date.clone(),
+        Value::DateTime(date) => crate::temporal::LocalDateTime {
             date: date.date,
             time: date.time,
-        })),
+        },
         Value::String(text) => {
             if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
-                return crate::temporal::parse_local_date_time_pattern(text, pattern)
-                    .map(Value::LocalDateTime)
-                    .ok_or_else(|| {
-                        DwError::new(format!("cannot convert '{text}' to LocalDateTime"))
-                    });
-            }
-            match crate::temporal::parse_literal(text) {
-                Some(Value::LocalDateTime(value)) => Ok(Value::LocalDateTime(value)),
-                _ => crate::temporal::parse_local_date_time_pattern(text, "uuuu-MM-dd'T'HH:mm:ss")
+                crate::temporal::parse_local_date_time_pattern(text, pattern).ok_or_else(|| {
+                    DwError::new(format!("cannot convert '{text}' to LocalDateTime"))
+                })?
+            } else {
+                match crate::temporal::parse_literal(text) {
+                    Some(Value::LocalDateTime(value)) => value,
+                    _ => crate::temporal::parse_local_date_time_pattern(
+                        text,
+                        "uuuu-MM-dd'T'HH:mm:ss",
+                    )
                     .or_else(|| {
                         crate::temporal::parse_local_date_time_pattern(text, "uuuu-MM-dd HH:mm:ss")
                     })
-                    .map(Value::LocalDateTime)
                     .ok_or_else(|| {
                         DwError::new(format!("cannot convert '{text}' to LocalDateTime"))
-                    }),
+                    })?,
+                }
             }
         }
-        other => Err(DwError::new(format!(
-            "cannot convert {} to LocalDateTime",
-            other.type_name()
-        ))),
-    }
+        other => {
+            return Err(DwError::new(format!(
+                "cannot convert {} to LocalDateTime",
+                other.type_name()
+            )))
+        }
+    };
+    let result = Value::LocalDateTime(date_time);
+    let display = formatted_display(value, &result, format);
+    Ok(result.apply_format(display.as_deref()))
 }
 
 fn parse_local_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
-    match value {
-        Value::LocalTime(_) => Ok(value.clone()),
-        Value::Time(time) => Ok(Value::LocalTime(time.time)),
+    let value = value.unwrap_formatted();
+    let time = match value {
+        Value::LocalTime(time) => *time,
+        Value::Time(time) => time.time,
         Value::String(text) => {
             if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
-                return crate::temporal::parse_local_time_pattern(text, pattern)
-                    .map(Value::LocalTime)
-                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to LocalTime")));
-            }
-            match crate::temporal::parse_literal(text) {
-                Some(Value::LocalTime(value)) => Ok(Value::LocalTime(value)),
-                _ => crate::temporal::parse_local_time_pattern(text, "HH:mm:ss")
-                    .or_else(|| crate::temporal::parse_local_time_pattern(text, "HH:mm"))
-                    .map(Value::LocalTime)
-                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to LocalTime"))),
+                crate::temporal::parse_local_time_pattern(text, pattern)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to LocalTime")))?
+            } else {
+                match crate::temporal::parse_literal(text) {
+                    Some(Value::LocalTime(value)) => value,
+                    _ => crate::temporal::parse_local_time_pattern(text, "HH:mm:ss")
+                        .or_else(|| crate::temporal::parse_local_time_pattern(text, "HH:mm"))
+                        .ok_or_else(|| {
+                            DwError::new(format!("cannot convert '{text}' to LocalTime"))
+                        })?,
+                }
             }
         }
-        other => Err(DwError::new(format!(
-            "cannot convert {} to LocalTime",
-            other.type_name()
-        ))),
-    }
+        other => {
+            return Err(DwError::new(format!(
+                "cannot convert {} to LocalTime",
+                other.type_name()
+            )))
+        }
+    };
+    let result = Value::LocalTime(time);
+    let display = formatted_display(value, &result, format);
+    Ok(result.apply_format(display.as_deref()))
 }
 
 fn parse_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
-    match value {
-        Value::Time(_) => Ok(value.clone()),
-        Value::LocalTime(time) => Ok(Value::Time(crate::temporal::Time {
+    let value = value.unwrap_formatted();
+    let time = match value {
+        Value::Time(time) => time.clone(),
+        Value::LocalTime(time) => crate::temporal::Time {
             time: *time,
             zone: crate::temporal::Zone::utc(),
-        })),
+        },
         Value::String(text) => {
             if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
-                return crate::temporal::parse_time_pattern(text, pattern)
-                    .map(Value::Time)
-                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Time")));
-            }
-            match crate::temporal::parse_literal(text) {
-                Some(Value::Time(value)) => Ok(Value::Time(value)),
-                _ => crate::temporal::parse_time_pattern(text, "HH:mm:ssXXX")
-                    .or_else(|| crate::temporal::parse_time_pattern(text, "HH:mm:ss"))
-                    .map(Value::Time)
-                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Time"))),
+                crate::temporal::parse_time_pattern(text, pattern)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Time")))?
+            } else {
+                match crate::temporal::parse_literal(text) {
+                    Some(Value::Time(value)) => value,
+                    _ => crate::temporal::parse_time_pattern(text, "HH:mm:ssXXX")
+                        .or_else(|| crate::temporal::parse_time_pattern(text, "HH:mm:ss"))
+                        .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Time")))?,
+                }
             }
         }
-        other => Err(DwError::new(format!(
-            "cannot convert {} to Time",
-            other.type_name()
-        ))),
-    }
+        other => {
+            return Err(DwError::new(format!(
+                "cannot convert {} to Time",
+                other.type_name()
+            )))
+        }
+    };
+    let result = Value::Time(time);
+    let display = formatted_display(value, &result, format);
+    Ok(result.apply_format(display.as_deref()))
 }
 
 fn period_to_number(
@@ -1237,6 +1294,8 @@ pub fn cast_value(
 
 /// Converts a value with `as`, supporting scalar, collection, temporal, and binary types.
 fn cast(value: Value, type_name: &str, options: Option<&Value>) -> Result<Value, DwError> {
+    // Conversions inspect the ISO value; only the target temporal type keeps a new format.
+    let value = value.unwrap_formatted().clone();
     let base = type_name.split('{').next().unwrap_or(type_name).trim();
     let format = pattern_from(options);
     match base {

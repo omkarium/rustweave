@@ -3139,7 +3139,8 @@ fn time(args: &[RValue]) -> Result<Value, DwError> {
 }
 
 fn at_beginning(args: &[RValue], part: &str) -> Result<Value, DwError> {
-    let value = value(args, 0)?.clone();
+    // Boundary helpers operate on the ISO value and return an unformatted result.
+    let value = value(args, 0)?.unwrap_formatted().clone();
     let zero_time = || crate::temporal::LocalTime {
         hour: 0,
         minute: 0,
@@ -3230,6 +3231,7 @@ fn at_beginning(args: &[RValue], part: &str) -> Result<Value, DwError> {
 }
 
 fn value_as_date(value: &Value) -> Result<crate::temporal::Date, DwError> {
+    let value = value.unwrap_formatted();
     match value {
         Value::Date(date) => Ok(*date),
         Value::DateTime(date) => Ok(date.date),
@@ -3835,6 +3837,7 @@ fn dw_write(value: &Value, level: usize) -> String {
         Value::Regex(pattern) => out.push_str(&format!("/{pattern}/")),
         Value::Uri(text) | Value::Key(text) => out.push_str(text),
         Value::Type(value) => out.push_str(&value.display()),
+        Value::Formatted(_, display) => out.push_str(display),
     }
     out
 }
@@ -4759,6 +4762,7 @@ fn type_base(args: &[RValue]) -> Result<Value, DwError> {
 }
 
 fn type_function_params(args: &[RValue]) -> Result<Value, DwError> {
+    // FunctionParam exposes only the declared parameter type and optionality.
     match type_arg(args, 0)?.structure() {
         crate::types::TypeValue::Function(params, _) => Ok(Value::Array(
             params

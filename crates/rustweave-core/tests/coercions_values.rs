@@ -47,7 +47,7 @@ output application/json
     true
   ],
   "date": "2015-10-01",
-  "formattedDate": "2003-10-01",
+  "formattedDate": "2003/10/01",
   "dateTime": "2015-10-01T23:57:59Z",
   "localDateTime": "2015-10-01T23:57:59",
   "localTime": "13:44:12.283",
@@ -79,12 +79,12 @@ output application/json
   f: toLocalDateTimeOrNull("2003-10-01 23:57:59", [{format: "uuuu-MM-dd HH:mm:ss"}])
 }"#;
     let expected = r#"{
-  "a": "2023-03-28",
+  "a": "2023-28-03",
   "b": null,
-  "c": "2003-10-01T23:57:59Z",
+  "c": "2003-10-01 23:57:59Z",
   "d": 0.005,
   "e": "13:44:12.283-08:00",
-  "f": "2003-10-01T23:57:59"
+  "f": "2003-10-01 23:57:59"
 }"#;
     assert_eq!(run(script), expected);
 }

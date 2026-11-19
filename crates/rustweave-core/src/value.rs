@@ -37,6 +37,7 @@ pub enum Value {
     Uri(String),
     Key(String),
     Type(Box<TypeValue>),
+    Formatted(Box<Value>, String),
 }
 
 impl Value {
@@ -61,6 +62,37 @@ impl Value {
             Value::Uri(_) => "Uri",
             Value::Key(_) => "Key",
             Value::Type(_) => "Type",
+            Value::Formatted(inner, _) => inner.type_name(),
+        }
+    }
+
+    /// Returns the value without any stored input format.
+    pub fn unwrap_formatted(&self) -> &Value {
+        match self {
+            Value::Formatted(inner, _) => inner.unwrap_formatted(),
+            other => other,
+        }
+    }
+
+    /// Wraps a temporal value with the exact text used for direct JSON output.
+    ///
+    /// The wrapper is intentionally only a display layer. Selectors, comparisons,
+    /// arithmetic, and casts all continue to use the underlying ISO value.
+    pub fn apply_format(self, display: Option<&str>) -> Value {
+        match display.filter(|display| !display.is_empty()) {
+            Some(display) => Value::Formatted(
+                Box::new(self.unwrap_formatted().clone()),
+                display.to_string(),
+            ),
+            None => self.unwrap_formatted().clone(),
+        }
+    }
+
+    /// Returns the stored display text, if any.
+    pub fn input_format(&self) -> Option<&str> {
+        match self {
+            Value::Formatted(_, display) => Some(display),
+            _ => None,
         }
     }
 
@@ -121,7 +153,7 @@ impl Value {
     pub fn temporal_field(&self, key: &str) -> Option<Value> {
         use chrono::Datelike;
         let number = |value: i64| Value::Number(Number::from_i64(value));
-        let (date, time, zone) = match self {
+        let (date, time, zone) = match self.unwrap_formatted() {
             Value::Date(date) => (Some(*date), None, None),
             Value::DateTime(value) => (Some(value.date), Some(&value.time), Some(&value.zone)),
             Value::LocalDateTime(value) => (Some(value.date), Some(&value.time), None),
@@ -157,7 +189,7 @@ impl Value {
                 _ => {}
             }
         }
-        if let Value::Period(period) = self {
+        if let Value::Period(period) = self.unwrap_formatted() {
             match key {
                 "years" => return Some(number(period.years)),
                 "months" => return Some(number(period.months)),
@@ -275,6 +307,7 @@ impl Value {
             Value::Regex(pattern) => pattern.clone(),
             Value::Uri(text) | Value::Key(text) => text.clone(),
             Value::Type(value) => value.display(),
+            Value::Formatted(_, _) => crate::json::write(self),
             _ => crate::json::write(self),
         }
     }
@@ -295,6 +328,7 @@ impl Value {
                     || period.days != 0
                     || !period.time_seconds.is_zero()
             }
+            Value::Formatted(inner, _) => inner.truthy(),
             _ => true,
         }
     }
@@ -308,7 +342,7 @@ impl Value {
     ///
     /// Returns `None` for values that have no ordering, such as mixed types.
     pub fn compare(&self, other: &Value) -> Option<Ordering> {
-        match (self, other) {
+        match (self.unwrap_formatted(), other.unwrap_formatted()) {
             (Value::Null, Value::Null) => Some(Ordering::Equal),
             (Value::Bool(a), Value::Bool(b)) => Some(a.cmp(b)),
             (Value::Number(a), Value::Number(b)) => Some(a.cmp(b)),
@@ -369,6 +403,7 @@ impl fmt::Debug for Value {
             Value::Regex(pattern) => write!(f, "/{pattern}/"),
             Value::Uri(text) | Value::Key(text) => write!(f, "{text:?}"),
             Value::Type(value) => write!(f, "{value}"),
+            Value::Formatted(inner, display) => write!(f, "{inner:?} ({display})"),
         }
     }
 }

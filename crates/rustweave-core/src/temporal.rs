@@ -1334,8 +1334,9 @@ fn field_text(
             count.max(1),
         ),
         'a' => {
+            // DataWeave renders the AM/PM marker in lowercase.
             let hour = time.map(|t| t.hour()).unwrap_or(0);
-            if hour < 12 { "AM" } else { "PM" }.to_string()
+            if hour < 12 { "am" } else { "pm" }.to_string()
         }
         'z' | 'Z' | 'X' | 'x' | 'O' | 'V' => {
             if let Some(zone) = zone {

@@ -189,6 +189,7 @@ fn write_value_options(value: &Value, level: usize, out: &mut String, options: &
         Value::Regex(pattern) => write_string(pattern, out),
         Value::Uri(text) | Value::Key(text) => write_string(text, out),
         Value::Type(value) => write_string(&value.display(), out),
+        Value::Formatted(_, display) => write_string(display, out),
     }
 }
 
@@ -253,6 +254,7 @@ fn write_value(value: &Value, level: usize, out: &mut String) {
         Value::Regex(pattern) => write_string(pattern, out),
         Value::Uri(text) | Value::Key(text) => write_string(text, out),
         Value::Type(value) => write_string(&value.display(), out),
+        Value::Formatted(_, display) => write_string(display, out),
     }
 }
 
