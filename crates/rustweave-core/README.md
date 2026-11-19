@@ -163,16 +163,20 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
 - JSON input and pretty-printed JSON output.
 - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, regex literals and ranges.
-- The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects` and
-  `dw::core::Numbers` function surface.
+- The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
+  `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
+  `dw::core::URL`, and `dw::core::Types` function surface.
+- The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`, and
+  `dw::util::Diff` utilities.
+- Date, time, period, time-zone, type, and binary values.
 - A reusable `Interp` and direct `Value`/`json` access.
 
 See the repository README for the full function list and CLI examples.
 
 ## What is not supported yet
 
-- XML, CSV, YAML, dates/times, binary values, user-defined types, metadata, `update`, and `using`.
-- `read`, `write`, `readUrl`, `dw::Runtime` (`try`/`orElse`/`fail`), and Mule/Anypoint connectors.
+- XML, YAML, CSV, Multipart, Crypto, data formats, and timers.
+- `dw::Runtime` (`try`/`orElse`/`fail`) and value metadata.
 - Lazy or streaming evaluation. This engine evaluates eagerly.
 - Object spread syntax.
 - The exact text of error messages is not part of the public contract, and regex behaviour follows

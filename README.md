@@ -222,6 +222,60 @@ are split across lines with a blank indented line between the brackets.
 
 `toHex`, `toBinary`, `fromHex`, `fromBinary`, `fromRadixNumber`, `toRadixNumber`
 
+### dw::core::Dates
+
+`atBeginningOfDay`, `atBeginningOfHour`, `atBeginningOfMonth`, `atBeginningOfWeek`,
+`atBeginningOfYear`, `date`, `dateTime`, `localDateTime`, `localTime`, `time`, `today`, `tomorrow`,
+`yesterday`
+
+### dw::core::Periods
+
+`between`, `days`, `duration`, `hours`, `minutes`, `months`, `period`, `seconds`, `years`
+
+### dw::core::Binaries
+
+`concatWith`, `fromBase64`, `fromHex`, `readLinesWith`, `toBase64`, `toHex`, `writeLinesWith`
+
+### dw::core::URL
+
+`compose`, `decodeURI`, `decodeURIComponent`, `encodeURI`, `encodeURIComponent`, `parseURI`
+
+### dw::core::Types
+
+`arrayItem`, `baseTypeOf`, `functionParamTypes`, `functionReturnType`, `intersectionItems`,
+`isAnyType`, `isArrayType`, `isBinaryType`, `isBooleanType`, `isDateTimeType`, `isDateType`,
+`isFunctionType`, `isIntersectionType`, `isKeyType`, `isLiteralType`, `isLocalDateTimeType`,
+`isLocalTimeType`, `isNamespaceType`, `isNothingType`, `isNullType`, `isNumberType`, `isObjectType`,
+`isPeriodType`, `isRangeType`, `isReferenceType`, `isRegexType`, `isStringType`, `isTimeType`,
+`isTimeZoneType`, `isTypeType`, `isUnionType`, `isUriType`, `literalValueOf`, `metadataOf`,
+`nameOf`, `objectFields`, `unionItems`
+
+### dw::util::Tree
+
+`asExpressionString`, `filterArrayLeafs`, `filterObjectLeafs`, `filterTree`, `isArrayType`,
+`isAttributeType`, `isObjectType`, `mapLeafValues`, `nodeExists`
+
+### dw::util::Coercions
+
+`toArray`, `toBinary`, `toBoolean`, `toDate`, `toDateOrNull`, `toDateTime`, `toDateTimeOrNull`,
+`toLocalDateTime`, `toLocalDateTimeOrNull`, `toLocalTime`, `toLocalTimeOrNull`, `toNumber`,
+`toNumberOrNull`, `toPeriod`, `toRegex`, `toString`, `toTime`, `toTimeOrNull`, `toTimeZone`,
+`toURI`
+
+### dw::util::Values
+
+`attr`, `field`, `index`, `mask`, `update`
+
+### dw::util::Math
+
+`acos`, `asin`, `atan`, `cos`, `decimalAdd`, `decimalDivide`, `decimalMultiply`, `decimalPow`,
+`decimalRound`, `decimalSqrt`, `decimalSubtract`, `log10`, `logn`, `sin`, `tan`, `toDegrees`,
+`toRadians`
+
+### dw::util::Diff
+
+`diff`
+
 ## Error handling
 
 Bad input, bad types, unresolved names, division by zero, invalid JSON, and unsupported syntax are
@@ -231,8 +285,9 @@ of the public contract.
 ## Scope
 
 The current release targets JSON output and the expression and standard-library surface listed
-above. XML, CSV, YAML, dates, binary, user-defined types, metadata, object spread, `update`, and
-`using` are outside the current scope.
+above, including date/time, period, binary, type, tree, coercion, value, math, URL, and diff
+helpers. XML, YAML, CSV, Multipart, Crypto, data formats, timers, runtime error helpers, value
+metadata, and object spread are outside the current scope.
 
 ## Development
 
