@@ -129,7 +129,7 @@ Add the core crate to `Cargo.toml`:
 
 ```toml
 [dependencies]
-rustweave-core = "0.1"
+rustweave-core = "0.2"
 ```
 
 ```rust

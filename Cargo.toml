@@ -4,7 +4,7 @@ resolver = "2"
 members = ["crates/rustweave-core", "crates/rustweave"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.74"
 publish = false
@@ -24,7 +24,7 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 num-bigint = "0.4"
 num-traits = "0.2"
 regex = "1"
-rustweave-core = { path = "crates/rustweave-core", version = "0.1.0" }
+rustweave-core = { path = "crates/rustweave-core", version = "0.2.0" }
 
 # Integration-test binaries share helper modules, so helpers used by only some
 # targets are otherwise reported as dead code. Library and binary targets keep
