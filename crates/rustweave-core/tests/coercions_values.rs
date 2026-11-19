@@ -97,14 +97,14 @@ import * from dw::core::Binaries
 output application/json
 ---
 {
-  binary: toHex(toBinary("Mule", "UTF-8")),
-  text: toString(toBinary("Mule", "UTF-8"), "UTF-8"),
+  binary: toHex(toBinary("DW", "UTF-8")),
+  text: toString(toBinary("DW", "UTF-8"), "UTF-8"),
   regex: toString(toRegex("a-Z")),
   period: toPeriod("P1D")
 }"#;
     let expected = r#"{
-  "binary": "4D756C65",
-  "text": "Mule",
+  "binary": "4457",
+  "text": "DW",
   "regex": "a-Z",
   "period": "P1D"
 }"#;
