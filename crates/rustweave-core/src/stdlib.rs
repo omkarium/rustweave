@@ -228,6 +228,37 @@ const NAMES: &[&str] = &[
     "index",
     "mask",
     "update",
+    "acos",
+    "asin",
+    "atan",
+    "cos",
+    "decimalAdd",
+    "decimalDivide",
+    "decimalMultiply",
+    "decimalPow",
+    "decimalRound",
+    "decimalSqrt",
+    "decimalSubtract",
+    "log10",
+    "logn",
+    "sin",
+    "tan",
+    "toDegrees",
+    "toRadians",
+    "compose",
+    "decodeURI",
+    "decodeURIComponent",
+    "encodeURI",
+    "encodeURIComponent",
+    "parseURI",
+    "diff",
+    "logDebug",
+    "logInfo",
+    "logWarn",
+    "logError",
+    "logWith",
+    "plusPlus",
+    "minusMinus",
 ];
 
 /// Returns the canonical built-in name for a function name.
@@ -249,6 +280,8 @@ pub fn constant(name: &str) -> Option<Value> {
         "ARRAY_TYPE" => Some(Value::String("Array".to_string())),
         "ATTRIBUTE_TYPE" => Some(Value::String("Attribute".to_string())),
         "OBJECT_TYPE" => Some(Value::String("Object".to_string())),
+        "PI" => Number::parse("3.141592653589793").map(Value::Number),
+        "E" => Number::parse("2.718281828459045").map(Value::Number),
         _ => None,
     }
 }
@@ -436,6 +469,38 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "field" => value_path_element(args, "Object"),
         "index" => value_index(args),
         "mask" | "update" => update_value(args),
+        "acos" => inverse_trig(args, |value| value.acos()),
+        "asin" => inverse_trig(args, |value| value.asin()),
+        "atan" => Ok(math_result(number_f64(args, 0)?.atan())),
+        "cos" => Ok(math_result(number_f64(args, 0)?.cos())),
+        "sin" => Ok(math_result(number_f64(args, 0)?.sin())),
+        "tan" => Ok(math_result(number_f64(args, 0)?.tan())),
+        "toDegrees" => Ok(math_result(number_f64(args, 0)?.to_degrees())),
+        "toRadians" => Ok(math_result(number_f64(args, 0)?.to_radians())),
+        "log10" => logarithm(args, |value| value.log10()),
+        "logn" => logarithm(args, |value| value.ln()),
+        "decimalAdd" => decimal_basic(args, |a, b| a.add(b)),
+        "decimalSubtract" => decimal_basic(args, |a, b| a.sub(b)),
+        "decimalMultiply" => decimal_basic(args, |a, b| a.mul(b)),
+        "decimalDivide" => decimal_divide(args),
+        "decimalPow" => decimal_pow(args),
+        "decimalSqrt" => decimal_sqrt(args),
+        "decimalRound" => decimal_round(args),
+        "compose" => compose(args),
+        "decodeURI" => Ok(Value::String(decode_uri(&string(args, 0)?, false))),
+        "decodeURIComponent" => Ok(Value::String(decode_uri(&string(args, 0)?, true))),
+        "encodeURI" => Ok(Value::String(encode_uri(&string(args, 0)?, false))),
+        "encodeURIComponent" => Ok(Value::String(encode_uri(&string(args, 0)?, true))),
+        "parseURI" => parse_uri(args),
+        "diff" => diff_values(args),
+        "logDebug" | "logInfo" | "logWarn" | "logError" => level_log(args),
+        "logWith" => log_with(args),
+        "plusPlus" => crate::eval::concat_values(value(args, 0)?.clone(), value(args, 1)?.clone())
+            .map(|value| value),
+        "minusMinus" => {
+            crate::eval::difference_values(value(args, 0)?.clone(), value(args, 1)?.clone())
+                .map(|value| value)
+        }
         "countBy" => count_by(args),
         "sumBy" => sum_by(args),
         "some" => some(args),
@@ -4064,4 +4129,480 @@ fn update_value(args: &[RValue]) -> Result<Value, DwError> {
         .ok_or_else(|| DwError::new("missing update value"))?;
     let selector = update_selector(selector)?;
     update_at(target, &selector, updater, 0)
+}
+
+fn number_f64(args: &[RValue], index: usize) -> Result<f64, DwError> {
+    number(args, index)?
+        .to_f64()
+        .ok_or_else(|| DwError::new("number is out of range"))
+}
+
+fn math_result(value: f64) -> Value {
+    if !value.is_finite() {
+        return Value::Null;
+    }
+    Number::from_f64(value)
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
+}
+
+fn inverse_trig<F>(args: &[RValue], f: F) -> Result<Value, DwError>
+where
+    F: FnOnce(f64) -> f64,
+{
+    let value = number_f64(args, 0)?;
+    if value.abs() > 1.0 {
+        return Ok(Value::Null);
+    }
+    Ok(math_result(f(value)))
+}
+
+fn logarithm<F>(args: &[RValue], f: F) -> Result<Value, DwError>
+where
+    F: FnOnce(f64) -> f64,
+{
+    let value = number_f64(args, 0)?;
+    if value <= 0.0 {
+        return Ok(Value::Null);
+    }
+    Ok(math_result(f(value)))
+}
+
+fn operation_context(args: &[RValue], index: usize) -> Option<Value> {
+    match args.get(index) {
+        Some(RValue::Val(value @ Value::Object(_))) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn context_precision(context: Option<&Value>) -> Option<i64> {
+    context
+        .and_then(|value| value.get("precision"))
+        .and_then(Value::as_number)
+        .and_then(Number::to_i64)
+}
+
+fn context_mode(context: Option<&Value>) -> String {
+    context
+        .and_then(|value| value.get("roundingMode"))
+        .map(Value::key_string)
+        .unwrap_or_else(|| "HALF_UP".to_string())
+}
+
+fn round_abs(number: &Number, mode: &str) -> Number {
+    let value = number.abs();
+    let floor = value.floor();
+    let fraction = value.sub(&floor);
+    let half = Number::parse("0.5").expect("half");
+    let one = Number::from_i64(1);
+    match mode {
+        "UP" => value.ceil(),
+        "DOWN" => floor,
+        "CEILING" | "FLOOR" => value.ceil(),
+        "HALF_DOWN" => {
+            if fraction == half {
+                floor
+            } else {
+                value.round()
+            }
+        }
+        "HALF_EVEN" => {
+            if fraction == half {
+                if floor
+                    .rem(&Number::from_i64(2))
+                    .map(|r| r.is_zero())
+                    .unwrap_or(false)
+                {
+                    floor
+                } else {
+                    floor.add(&one)
+                }
+            } else {
+                value.round()
+            }
+        }
+        _ => value.round(),
+    }
+}
+
+fn round_significant(number: &Number, precision: i64, mode: &str) -> Number {
+    if precision <= 0 || number.is_zero() {
+        return number.clone();
+    }
+    let abs = number.abs();
+    let value = match abs.to_f64() {
+        Some(value) if value > 0.0 && value.is_finite() => value,
+        _ => return number.clone(),
+    };
+    let exponent = value.log10().floor() as i64 + 1;
+    let places = exponent - precision;
+    let factor = Number::from_i64(10)
+        .pow(&Number::from_i64(places))
+        .unwrap_or(Number::from_i64(1));
+    if factor.is_zero() {
+        return number.clone();
+    }
+    let scaled = match number.div(&factor) {
+        Some(value) => value,
+        None => return number.clone(),
+    };
+    let rounded = if scaled.is_negative() {
+        let abs = round_abs(&scaled, mode);
+        match mode {
+            "CEILING" => abs.neg(),
+            "FLOOR" => abs.neg(),
+            _ => abs.neg(),
+        }
+    } else {
+        match mode {
+            "DOWN" => scaled.floor(),
+            "FLOOR" => scaled.floor(),
+            _ => round_abs(&scaled, mode),
+        }
+    };
+    rounded.mul(&factor)
+}
+
+fn decimal_basic<F>(args: &[RValue], operation: F) -> Result<Value, DwError>
+where
+    F: FnOnce(&Number, &Number) -> Number,
+{
+    let left = number(args, 0)?;
+    let right = number(args, 1)?;
+    let mut result = operation(&left, &right);
+    if let Some(context) = operation_context(args, 2) {
+        if let Some(precision) = context_precision(Some(&context)) {
+            result = round_significant(&result, precision, &context_mode(Some(&context)));
+        }
+    }
+    Ok(Value::Number(result))
+}
+
+fn decimal_divide(args: &[RValue]) -> Result<Value, DwError> {
+    let dividend = number(args, 0)?;
+    let divisor = number(args, 1)?;
+    let mut result = dividend
+        .div(&divisor)
+        .ok_or_else(|| DwError::new("division by zero"))?;
+    if let Some(context) = operation_context(args, 2) {
+        if let Some(precision) = context_precision(Some(&context)) {
+            result = round_significant(&result, precision, &context_mode(Some(&context)));
+        }
+    }
+    Ok(Value::Number(result))
+}
+
+fn decimal_pow(args: &[RValue]) -> Result<Value, DwError> {
+    let base = number(args, 0)?;
+    let exponent = number(args, 1)?;
+    let mut result = base
+        .pow(&exponent)
+        .ok_or_else(|| DwError::new("power is out of range"))?;
+    if let Some(context) = operation_context(args, 2) {
+        if let Some(precision) = context_precision(Some(&context)) {
+            result = round_significant(&result, precision, &context_mode(Some(&context)));
+        }
+    }
+    Ok(Value::Number(result))
+}
+
+fn decimal_sqrt(args: &[RValue]) -> Result<Value, DwError> {
+    let value = number(args, 0)?;
+    let mut result = value
+        .sqrt()
+        .ok_or_else(|| DwError::new("square root of a negative number"))?;
+    if let Some(context) = operation_context(args, 1) {
+        if let Some(precision) = context_precision(Some(&context)) {
+            result = round_significant(&result, precision, &context_mode(Some(&context)));
+        }
+    }
+    Ok(Value::Number(result))
+}
+
+fn decimal_round(args: &[RValue]) -> Result<Value, DwError> {
+    let value = number(args, 0)?;
+    let context = operation_context(args, 1);
+    let precision = context_precision(context.as_ref()).unwrap_or(34);
+    let mode = context_mode(context.as_ref());
+    Ok(Value::Number(round_significant(&value, precision, &mode)))
+}
+
+fn encode_uri(text: &str, component: bool) -> String {
+    let mut out = String::new();
+    for byte in text.bytes() {
+        let c = byte as char;
+        let unreserved = c.is_ascii_alphanumeric() || "-_.!~*'()".contains(c);
+        let reserved = component || !";,/?:@&=+$#".contains(c);
+        if unreserved {
+            out.push(c);
+        } else if !reserved {
+            out.push(c);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn decode_uri(text: &str, component: bool) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (
+                (bytes[index + 1] as char).to_digit(16),
+                (bytes[index + 2] as char).to_digit(16),
+            ) {
+                let decoded = (high * 16 + low) as u8;
+                let c = decoded as char;
+                let keep = !component && ";,/?:@&=+$#".contains(c);
+                if keep {
+                    out.extend_from_slice(&bytes[index..index + 3]);
+                } else {
+                    out.push(decoded);
+                }
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn compose(args: &[RValue]) -> Result<Value, DwError> {
+    let parts = array(args, 0)?;
+    let values = array(args, 1)?;
+    let mut out = String::new();
+    for (index, part) in parts.iter().enumerate() {
+        out.push_str(&part.key_string());
+        if let Some(value) = values.get(index) {
+            out.push_str(&encode_uri(&value.key_string(), true));
+        }
+    }
+    for value in values.iter().skip(parts.len()) {
+        out.push_str(&encode_uri(&value.key_string(), true));
+    }
+    Ok(Value::String(out))
+}
+
+fn parse_uri(args: &[RValue]) -> Result<Value, DwError> {
+    let raw = string(args, 0)?;
+    let mut entries = vec![("isValid".to_string(), Value::Bool(true))];
+    entries.push(("raw".to_string(), Value::String(raw.clone())));
+    let mut rest = raw.as_str();
+    let mut scheme = None;
+    if let Some(index) = rest.find(':') {
+        let candidate = &rest[..index];
+        if !candidate.is_empty()
+            && candidate
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+        {
+            scheme = Some(candidate.to_string());
+            rest = &rest[index + 1..];
+        }
+    }
+    let mut fragment = None;
+    if let Some(index) = rest.find('#') {
+        fragment = Some(rest[index + 1..].to_string());
+        rest = &rest[..index];
+    }
+    let mut query = None;
+    if let Some(index) = rest.find('?') {
+        query = Some(rest[index + 1..].to_string());
+        rest = &rest[..index];
+    }
+    let mut authority = None;
+    let mut user = None;
+    let mut host = None;
+    let mut port = None;
+    let mut path = rest.to_string();
+    if let Some(stripped) = rest.strip_prefix("//") {
+        let end = stripped.find('/').unwrap_or(stripped.len());
+        let auth = &stripped[..end];
+        authority = Some(auth.to_string());
+        path = stripped[end..].to_string();
+        let mut host_port = auth;
+        if let Some((before, after)) = auth.rsplit_once('@') {
+            user = Some(before.to_string());
+            host_port = after;
+        }
+        if let Some((h, p)) = host_port.rsplit_once(':') {
+            if !h.is_empty() && p.chars().all(|c| c.is_ascii_digit()) {
+                host = Some(h.to_string());
+                port = p.parse::<i64>().ok().map(Number::from_i64);
+            } else {
+                host = Some(host_port.to_string());
+            }
+        } else {
+            host = Some(host_port.to_string());
+        }
+    }
+    let is_absolute = scheme.is_some();
+    let is_opaque = scheme.is_some() && authority.is_none() && !path.is_empty();
+    if let Some(host) = host {
+        entries.push(("host".to_string(), Value::String(host)));
+    }
+    if let Some(authority) = authority {
+        entries.push(("authority".to_string(), Value::String(authority)));
+    }
+    if let Some(fragment) = fragment {
+        entries.push(("fragment".to_string(), Value::String(fragment)));
+    }
+    if !path.is_empty() {
+        entries.push(("path".to_string(), Value::String(path)));
+    }
+    if let Some(port) = port {
+        entries.push(("port".to_string(), Value::Number(port)));
+    }
+    if let Some(query) = query {
+        entries.push(("query".to_string(), Value::String(query)));
+    }
+    if let Some(scheme) = scheme {
+        entries.push(("scheme".to_string(), Value::String(scheme)));
+    }
+    if let Some(user) = user {
+        entries.push(("user".to_string(), Value::String(user)));
+    }
+    entries.push(("isAbsolute".to_string(), Value::Bool(is_absolute)));
+    entries.push(("isOpaque".to_string(), Value::Bool(is_opaque)));
+    Ok(Value::Object(entries))
+}
+
+fn diff_repr(value: &Value) -> String {
+    match value {
+        Value::String(_) => crate::json::write(value),
+        Value::Null | Value::Bool(_) | Value::Number(_) => value.key_string(),
+        Value::Date(_)
+        | Value::DateTime(_)
+        | Value::LocalDateTime(_)
+        | Value::LocalTime(_)
+        | Value::Time(_)
+        | Value::TimeZone(_)
+        | Value::Period(_) => format!("|{}|", value.key_string()),
+        Value::Binary(_) => crate::json::write(value),
+        _ => crate::json::write(value),
+    }
+}
+
+fn diff_add(diffs: &mut Vec<Value>, expected: String, actual: String, path: &str) {
+    diffs.push(Value::Object(vec![
+        ("expected".to_string(), Value::String(expected)),
+        ("actual".to_string(), Value::String(actual)),
+        ("path".to_string(), Value::String(path.to_string())),
+    ]));
+}
+
+fn diff_walk(
+    actual: &Value,
+    expected: &Value,
+    unordered: bool,
+    path: &str,
+    diffs: &mut Vec<Value>,
+) {
+    if actual == expected {
+        return;
+    }
+    match (actual, expected) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (key, expected_value) in b {
+                match a.iter().rev().find(|(name, _)| name == key) {
+                    Some((_, actual_value)) => {
+                        diff_walk(
+                            actual_value,
+                            expected_value,
+                            unordered,
+                            &format!("{path}.{key}"),
+                            diffs,
+                        );
+                    }
+                    None => diff_add(
+                        diffs,
+                        format!(
+                            "Entry {path}.{key} with type {}",
+                            expected_value.type_name()
+                        ),
+                        "was not present in object.".to_string(),
+                        &format!("{path}.{key}"),
+                    ),
+                }
+            }
+            if !unordered && a.len() == b.len() {
+                let keys_a: Vec<&String> = a.iter().map(|(key, _)| key).collect();
+                let keys_b: Vec<&String> = b.iter().map(|(key, _)| key).collect();
+                if keys_a != keys_b && diffs.is_empty() {
+                    diff_add(
+                        diffs,
+                        crate::json::write(expected),
+                        crate::json::write(actual),
+                        path,
+                    );
+                }
+            }
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            if a.len() != b.len() {
+                diff_add(
+                    diffs,
+                    format!("Array size is {}", b.len()),
+                    format!("was {}", a.len()),
+                    path,
+                );
+            } else {
+                for (index, (actual_value, expected_value)) in a.iter().zip(b.iter()).enumerate() {
+                    diff_walk(
+                        actual_value,
+                        expected_value,
+                        unordered,
+                        &format!("{path}[{index}]"),
+                        diffs,
+                    );
+                }
+            }
+        }
+        _ => diff_add(diffs, diff_repr(expected), diff_repr(actual), path),
+    }
+}
+
+fn diff_values(args: &[RValue]) -> Result<Value, DwError> {
+    let actual = value(args, 0)?;
+    let expected = value(args, 1)?;
+    let unordered = optional_object(args, 2)
+        .and_then(|value| value.get("unordered").cloned())
+        .map(|value| value.truthy())
+        .unwrap_or(false);
+    let path = match args.get(3) {
+        Some(RValue::Val(Value::String(text))) => text.clone(),
+        _ => "(root)".to_string(),
+    };
+    let mut diffs = Vec::new();
+    diff_walk(actual, expected, unordered, &path, &mut diffs);
+    Ok(Value::Object(vec![
+        ("matches".to_string(), Value::Bool(diffs.is_empty())),
+        ("diffs".to_string(), Value::Array(diffs)),
+    ]))
+}
+
+fn level_log(args: &[RValue]) -> Result<Value, DwError> {
+    let (prefix, value) = match args.len() {
+        0 => return Ok(Value::Null),
+        1 => (None, value(args, 0)?.clone()),
+        _ => (Some(value(args, 0)?.key_string()), value(args, 1)?.clone()),
+    };
+    match prefix {
+        Some(prefix) => eprintln!("{prefix}: {}", crate::json::write(&value)),
+        None => eprintln!("{}", crate::json::write(&value)),
+    }
+    Ok(value)
+}
+
+fn log_with(args: &[RValue]) -> Result<Value, DwError> {
+    let logged = value(args, 2)?.clone();
+    let level = value(args, 0)?.key_string();
+    let prefix = value(args, 1)?.key_string();
+    eprintln!("[{level}] {prefix}: {}", crate::json::write(&logged));
+    Ok(logged)
 }

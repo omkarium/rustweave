@@ -838,6 +838,22 @@ fn difference(left: Value, right: Value) -> Result<RValue, DwError> {
     }
 }
 
+/// Concatenates two values using `++` semantics.
+pub fn concat_values(left: Value, right: Value) -> Result<Value, DwError> {
+    match concat(left, right)? {
+        RValue::Val(value) => Ok(value),
+        _ => Err(DwError::new("concatenation produced a function")),
+    }
+}
+
+/// Removes values using `--` semantics.
+pub fn difference_values(left: Value, right: Value) -> Result<Value, DwError> {
+    match difference(left, right)? {
+        RValue::Val(value) => Ok(value),
+        _ => Err(DwError::new("difference produced a function")),
+    }
+}
+
 /// Implements `++` for arrays, objects, and scalars.
 fn concat(left: Value, right: Value) -> Result<RValue, DwError> {
     if matches!(left, Value::Null) || matches!(right, Value::Null) {
