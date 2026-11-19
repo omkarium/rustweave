@@ -158,8 +158,8 @@ The crate also exposes:
 ## Language surface
 
 A script may start with a header containing `%dw 2.0`, `output application/json`,
-`import * from ...`, named imports, `var`, `fun`, and annotations. If there is no header, the whole
-text is the body. Expressions include:
+`import * from ...`, named imports, `var`, `fun`, `type` declarations, and annotations. If there is
+no header, the whole text is the body. Expressions include:
 
 - `null`, booleans, numbers, strings, arrays, and objects
 - variable references, selections, safe selectors, indexing, and calls
@@ -170,6 +170,9 @@ text is the body. Expressions include:
 - regex literals and array cons (`~`)
 - dynamic object keys, string interpolation, and trailing commas
 - ranges and range indexing
+- date, time, date-time, local date-time, local time, period, and binary values and literals
+- user-defined `type` declarations
+- `update` expressions in the form `value update selector with newValue`
 - `match`/`case` with literal, empty-array, and `[head ~ tail]` patterns, plus an optional `else`
   arm
 - `do` blocks with one or more local variables and any body expression, including `if`/`else` and
@@ -184,6 +187,100 @@ significant digits. Numbers print without scientific notation or trailing zeros.
 two-space indentation, one element per line, and a space after each colon. Empty arrays and objects
 are split across lines with a blank indented line between the brackets.
 
+## Standard library examples
+
+Create and manipulate dates and periods:
+
+```text
+%dw 2.0
+import * from dw::core::Dates
+import * from dw::core::Periods
+output application/json
+---
+{
+  day: date({year: 2020, month: 10, day: 6}),
+  startOfMonth: atBeginningOfMonth(|2020-10-06|),
+  tomorrow: |2020-10-05T20:22:34Z| + days(1),
+  leap: isLeapYear(|2020-01-01|)
+}
+```
+
+```json
+{
+  "day": "2020-10-06",
+  "startOfMonth": "2020-10-01",
+  "tomorrow": "2020-10-06T20:22:34Z",
+  "leap": true
+}
+```
+
+Transform every leaf in a tree:
+
+```text
+%dw 2.0
+import * from dw::util::Tree
+output application/json
+---
+{ user: { name: "mariano", tags: ["one", "two"] } } mapLeafValues (value, path) ->
+  if (value is String) upper(value) else value
+```
+
+```json
+{
+  "user": {
+    "name": "MARIANO",
+    "tags": [
+      "ONE",
+      "TWO"
+    ]
+  }
+}
+```
+
+Read a JSON string and write a compact JSON string:
+
+```text
+%dw 2.0
+output application/json
+---
+{
+  parsed: read("{\"id\":1,\"name\":\"ana\"}", "application/json"),
+  encoded: write({id: 1, name: "ana"}, "application/json", {indent: false})
+}
+```
+
+```json
+{
+  "parsed": {
+    "id": 1,
+    "name": "ana"
+  },
+  "encoded": "{\"id\": 1,\"name\": \"ana\"}"
+}
+```
+
+Work with binary values:
+
+```text
+%dw 2.0
+import * from dw::core::Binaries
+output application/json
+---
+{
+  hex: toHex(fromHex("4D756C65")),
+  base64: toBase64(fromHex("4D756C65")),
+  literalHex: toHex(|4D756C65|)
+}
+```
+
+```json
+{
+  "hex": "4D756C65",
+  "base64": "TXVsZQ==",
+  "literalHex": "4D756C65"
+}
+```
+
 ## Supported functions
 
 ### dw::Core
@@ -194,7 +291,8 @@ are split across lines with a blank indented line between the brackets.
 `trim`, `startsWith`, `endsWith`, `splitBy`, `with`, `replace`, `joinBy`, `abs`, `ceil`, `floor`,
 `round`, `pow`, `sqrt`, `mod`, `isInteger`, `isDecimal`, `isOdd`, `isEven`, `isBlank`, `minBy`,
 `maxBy`, `max`, `min`, `avg`, `then`, `onNull`, `matches`, `match`, `scan`, `typeOf`, `random`,
-`randomInt`, `uuid`, `log`
+`randomInt`, `uuid`, `log`, `daysBetween`, `isLeapYear`, `now`, `read`, `write`, `readUrl`,
+`logDebug`, `logInfo`, `logWarn`, `logError`, `logWith`, `plusPlus`, `minusMinus`
 
 ### dw::core::Arrays
 
@@ -286,8 +384,8 @@ of the public contract.
 
 The current release targets JSON output and the expression and standard-library surface listed
 above, including date/time, period, binary, type, tree, coercion, value, math, URL, and diff
-helpers. XML, YAML, CSV, Multipart, Crypto, data formats, timers, runtime error helpers, value
-metadata, and object spread are outside the current scope.
+helpers. XML, YAML, CSV, Multipart, Crypto, data formats, timers, value metadata, and object
+spread are outside the current scope. `dw::Runtime` is out of scope, and `using` is not supported.
 
 ## Development
 

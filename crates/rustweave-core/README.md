@@ -176,7 +176,9 @@ See the repository README for the full function list and CLI examples.
 ## What is not supported yet
 
 - XML, YAML, CSV, Multipart, Crypto, data formats, and timers.
-- `dw::Runtime` (`try`/`orElse`/`fail`) and value metadata.
+- `dw::Runtime` (`try`/`orElse`/`fail`) is out of scope.
+- `using` is not supported.
+- Value metadata.
 - Lazy or streaming evaluation. This engine evaluates eagerly.
 - Object spread syntax.
 - The exact text of error messages is not part of the public contract, and regex behaviour follows

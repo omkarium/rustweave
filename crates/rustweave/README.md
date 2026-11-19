@@ -116,8 +116,8 @@ $ echo $?
 
 The CLI targets JSON output. The parser, evaluator, exact decimal arithmetic, standard library, and
 supported/unsupported feature list are provided by the `rustweave-core` crate; see its
-documentation. XML, YAML, CSV, Multipart, Crypto, data formats, timers, and `dw::Runtime` are not
-supported yet.
+documentation. XML, YAML, CSV, Multipart, Crypto, data formats, and timers are not supported yet.
+`dw::Runtime` is out of scope, and `using` is not supported.
 
 The engine is provided by the `rustweave-core` crate.
 
