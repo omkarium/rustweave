@@ -21,6 +21,8 @@ pub enum HeaderItem {
     Var(String, Expr),
     /// A global `fun` definition.
     Fun(FunDef),
+    /// A named type declaration with its source expression.
+    Type(String, String),
 }
 
 /// A parsed script: header declarations followed by a body expression.
@@ -94,7 +96,18 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
             items.push(HeaderItem::Fun(parse_fun(rest.trim())?));
             continue;
         }
-        if line.starts_with("type ") || line.starts_with("ns ") {
+        if let Some(rest) = line.strip_prefix("type ") {
+            let (name, value) = rest
+                .split_once('=')
+                .ok_or_else(|| DwError::new("invalid type declaration"))?;
+            let name = name.trim().to_string();
+            if name.is_empty() {
+                return Err(DwError::new("invalid type declaration"));
+            }
+            items.push(HeaderItem::Type(name, value.trim().to_string()));
+            continue;
+        }
+        if line.starts_with("ns ") {
             continue;
         }
         return Err(DwError::new(format!("unsupported header line: {line}")));

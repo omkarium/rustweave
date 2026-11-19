@@ -259,6 +259,41 @@ const NAMES: &[&str] = &[
     "logWith",
     "plusPlus",
     "minusMinus",
+    "arrayItem",
+    "baseTypeOf",
+    "functionParamTypes",
+    "functionReturnType",
+    "intersectionItems",
+    "isAnyType",
+    "isBinaryType",
+    "isBooleanType",
+    "isDateTimeType",
+    "isDateType",
+    "isFunctionType",
+    "isIntersectionType",
+    "isKeyType",
+    "isLiteralType",
+    "isLocalDateTimeType",
+    "isLocalTimeType",
+    "isNamespaceType",
+    "isNothingType",
+    "isNullType",
+    "isNumberType",
+    "isPeriodType",
+    "isRangeType",
+    "isReferenceType",
+    "isRegexType",
+    "isStringType",
+    "isTimeType",
+    "isTimeZoneType",
+    "isTypeType",
+    "isUnionType",
+    "isUriType",
+    "literalValueOf",
+    "metadataOf",
+    "nameOf",
+    "objectFields",
+    "unionItems",
 ];
 
 /// Returns the canonical built-in name for a function name.
@@ -270,6 +305,10 @@ pub fn builtin_name(name: &str) -> Option<&'static str> {
 pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
     match module {
         "dw::core::Binaries" => &[("fromHex", "binariesFromHex"), ("toHex", "binariesToHex")],
+        "dw::core::Types" => &[
+            ("isArrayType", "typesIsArrayType"),
+            ("isObjectType", "typesIsObjectType"),
+        ],
         _ => &[],
     }
 }
@@ -495,12 +534,104 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "diff" => diff_values(args),
         "logDebug" | "logInfo" | "logWarn" | "logError" => level_log(args),
         "logWith" => log_with(args),
-        "plusPlus" => crate::eval::concat_values(value(args, 0)?.clone(), value(args, 1)?.clone())
-            .map(|value| value),
+        "plusPlus" => crate::eval::concat_values(value(args, 0)?.clone(), value(args, 1)?.clone()),
         "minusMinus" => {
             crate::eval::difference_values(value(args, 0)?.clone(), value(args, 1)?.clone())
-                .map(|value| value)
         }
+        "arrayItem" => type_array_item(args),
+        "baseTypeOf" => type_base(args),
+        "functionParamTypes" => type_function_params(args),
+        "functionReturnType" => type_function_return(args),
+        "intersectionItems" => type_items(args, true),
+        "unionItems" => type_items(args, false),
+        "typesIsArrayType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Array(_))
+        }),
+        "typesIsObjectType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Object(_))
+        }),
+        "isAnyType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Any)
+        }),
+        "isBinaryType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Binary)
+        }),
+        "isBooleanType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Boolean)
+        }),
+        "isDateTimeType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::DateTime)
+        }),
+        "isDateType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Date)
+        }),
+        "isFunctionType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Function(_, _))
+        }),
+        "isIntersectionType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Intersection(_))
+        }),
+        "isKeyType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Key)
+        }),
+        "isLiteralType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Literal(_))
+        }),
+        "isLocalDateTimeType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::LocalDateTime)
+        }),
+        "isLocalTimeType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::LocalTime)
+        }),
+        "isNamespaceType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Namespace)
+        }),
+        "isNothingType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Nothing)
+        }),
+        "isNullType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Null)
+        }),
+        "isNumberType" => type_predicate(args, |value| {
+            matches!(
+                value.structure(),
+                crate::types::TypeValue::Number
+                    | crate::types::TypeValue::Integer
+                    | crate::types::TypeValue::Decimal
+            )
+        }),
+        "isPeriodType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Period)
+        }),
+        "isRangeType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Range)
+        }),
+        "isReferenceType" => type_reference(args),
+        "isRegexType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Regex)
+        }),
+        "isStringType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::String)
+        }),
+        "isTimeType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Time)
+        }),
+        "isTimeZoneType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::TimeZone)
+        }),
+        "isTypeType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Type)
+        }),
+        "isUnionType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Union(_))
+        }),
+        "isUriType" => type_predicate(args, |value| {
+            matches!(value.structure(), crate::types::TypeValue::Uri)
+        }),
+        "literalValueOf" => type_literal_value(args),
+        "metadataOf" => type_metadata(args),
+        "nameOf" => type_name(args),
+        "objectFields" => type_object_fields(args),
         "countBy" => count_by(args),
         "sumBy" => sum_by(args),
         "some" => some(args),
@@ -3703,6 +3834,7 @@ fn dw_write(value: &Value, level: usize) -> String {
         )),
         Value::Regex(pattern) => out.push_str(&format!("/{pattern}/")),
         Value::Uri(text) | Value::Key(text) => out.push_str(text),
+        Value::Type(value) => out.push_str(&value.display()),
     }
     out
 }
@@ -4333,9 +4465,7 @@ fn encode_uri(text: &str, component: bool) -> String {
         let c = byte as char;
         let unreserved = c.is_ascii_alphanumeric() || "-_.!~*'()".contains(c);
         let reserved = component || !";,/?:@&=+$#".contains(c);
-        if unreserved {
-            out.push(c);
-        } else if !reserved {
+        if unreserved || !reserved {
             out.push(c);
         } else {
             out.push_str(&format!("%{byte:02X}"));
@@ -4605,4 +4735,172 @@ fn log_with(args: &[RValue]) -> Result<Value, DwError> {
     let prefix = value(args, 1)?.key_string();
     eprintln!("[{level}] {prefix}: {}", crate::json::write(&logged));
     Ok(logged)
+}
+
+fn type_arg(args: &[RValue], index: usize) -> Result<&crate::types::TypeValue, DwError> {
+    match value(args, index)? {
+        Value::Type(value) => Ok(value),
+        other => Err(DwError::new(format!(
+            "expected a Type, found {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn type_array_item(args: &[RValue]) -> Result<Value, DwError> {
+    match type_arg(args, 0)?.structure() {
+        crate::types::TypeValue::Array(item) => Ok(Value::Type(item.clone())),
+        _ => Err(DwError::new("expected an Array type")),
+    }
+}
+
+fn type_base(args: &[RValue]) -> Result<Value, DwError> {
+    Ok(Value::Type(Box::new(type_arg(args, 0)?.base())))
+}
+
+fn type_function_params(args: &[RValue]) -> Result<Value, DwError> {
+    match type_arg(args, 0)?.structure() {
+        crate::types::TypeValue::Function(params, _) => Ok(Value::Array(
+            params
+                .iter()
+                .map(|param| {
+                    Value::Object(vec![
+                        (
+                            "paramType".to_string(),
+                            Value::Type(Box::new(param.value.clone())),
+                        ),
+                        ("optional".to_string(), Value::Bool(param.optional)),
+                    ])
+                })
+                .collect(),
+        )),
+        _ => Err(DwError::new("expected a Function type")),
+    }
+}
+
+fn type_function_return(args: &[RValue]) -> Result<Value, DwError> {
+    match type_arg(args, 0)?.structure() {
+        crate::types::TypeValue::Function(_, result) => Ok(Value::Type(result.clone())),
+        _ => Err(DwError::new("expected a Function type")),
+    }
+}
+
+fn type_items(args: &[RValue], intersection: bool) -> Result<Value, DwError> {
+    let value = type_arg(args, 0)?.structure();
+    let items = match (intersection, value) {
+        (true, crate::types::TypeValue::Intersection(items)) => items,
+        (false, crate::types::TypeValue::Union(items)) => items,
+        _ => {
+            return Err(DwError::new(if intersection {
+                "expected an Intersection type"
+            } else {
+                "expected a Union type"
+            }))
+        }
+    };
+    Ok(Value::Array(
+        items
+            .iter()
+            .map(|item| Value::Type(Box::new(item.clone())))
+            .collect(),
+    ))
+}
+
+fn type_predicate<F>(args: &[RValue], predicate: F) -> Result<Value, DwError>
+where
+    F: FnOnce(&crate::types::TypeValue) -> bool,
+{
+    Ok(Value::Bool(predicate(type_arg(args, 0)?)))
+}
+
+fn type_reference(args: &[RValue]) -> Result<Value, DwError> {
+    fn is_reference(value: &crate::types::TypeValue) -> bool {
+        match value {
+            crate::types::TypeValue::Declared { .. } => false,
+            crate::types::TypeValue::Ref(_) => true,
+            crate::types::TypeValue::Meta(inner, _) => is_reference(inner),
+            _ => false,
+        }
+    }
+    Ok(Value::Bool(is_reference(type_arg(args, 0)?)))
+}
+
+fn type_literal_value(args: &[RValue]) -> Result<Value, DwError> {
+    match type_arg(args, 0)?.structure() {
+        crate::types::TypeValue::Literal(value) => Ok(value.clone()),
+        _ => Err(DwError::new("expected a Literal type")),
+    }
+}
+
+fn type_metadata(args: &[RValue]) -> Result<Value, DwError> {
+    Ok(Value::Object(type_arg(args, 0)?.metadata()))
+}
+
+fn type_name(args: &[RValue]) -> Result<Value, DwError> {
+    Ok(Value::String(type_arg(args, 0)?.display()))
+}
+
+fn type_field_key(field: &crate::types::TypeField) -> Value {
+    let namespace = field
+        .namespace
+        .clone()
+        .map(Value::String)
+        .unwrap_or(Value::Null);
+    let attributes = field
+        .attributes
+        .iter()
+        .map(|attribute| {
+            let namespace = attribute
+                .namespace
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+            Value::Object(vec![
+                (
+                    "name".to_string(),
+                    Value::Object(vec![
+                        (
+                            "localName".to_string(),
+                            Value::String(attribute.name.clone()),
+                        ),
+                        ("namespace".to_string(), namespace),
+                    ]),
+                ),
+                (
+                    "value".to_string(),
+                    Value::String(attribute.value.display()),
+                ),
+                ("required".to_string(), Value::Bool(attribute.required)),
+            ])
+        })
+        .collect();
+    Value::Object(vec![
+        (
+            "name".to_string(),
+            Value::Object(vec![
+                ("localName".to_string(), Value::String(field.name.clone())),
+                ("namespace".to_string(), namespace),
+            ]),
+        ),
+        ("attributes".to_string(), Value::Array(attributes)),
+    ])
+}
+
+fn type_object_fields(args: &[RValue]) -> Result<Value, DwError> {
+    match type_arg(args, 0)?.structure() {
+        crate::types::TypeValue::Object(fields) => Ok(Value::Array(
+            fields
+                .iter()
+                .map(|field| {
+                    Value::Object(vec![
+                        ("key".to_string(), type_field_key(field)),
+                        ("required".to_string(), Value::Bool(field.required)),
+                        ("repeated".to_string(), Value::Bool(field.repeated)),
+                        ("value".to_string(), Value::String(field.value.display())),
+                    ])
+                })
+                .collect(),
+        )),
+        _ => Err(DwError::new("expected an Object type")),
+    }
 }

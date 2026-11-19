@@ -41,6 +41,9 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
             if let Some(value) = stdlib::constant(name) {
                 return Ok(RValue::Val(value));
             }
+            if let Some(value) = crate::types::builtin(name) {
+                return Ok(RValue::Val(Value::Type(Box::new(value))));
+            }
             if let Some(builtin) = stdlib::builtin_name(name) {
                 return Ok(RValue::Builtin(builtin));
             }
@@ -973,6 +976,7 @@ fn is_type(value: &Value, type_name: &str) -> bool {
         "Regex" => matches!(value, Value::Regex(_)),
         "Uri" | "URI" => matches!(value, Value::Uri(_)),
         "Key" => matches!(value, Value::Key(_)),
+        "Type" => matches!(value, Value::Type(_)),
         _ => false,
     }
 }

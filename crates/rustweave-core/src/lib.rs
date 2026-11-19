@@ -153,6 +153,8 @@ mod runtime;
 mod stdlib;
 #[allow(dead_code)]
 mod temporal;
+#[allow(dead_code)]
+mod types;
 pub mod value;
 
 use std::rc::Rc;
@@ -212,6 +214,10 @@ impl Interp {
                 HeaderItem::Var(name, expr) => {
                     let value = eval::eval(expr, &env)?;
                     env = env.extend(name.clone(), value);
+                }
+                HeaderItem::Type(name, text) => {
+                    let value = types::parse_declaration(name, text)?;
+                    env = env.extend(name.clone(), RValue::Val(Value::Type(Box::new(value))));
                 }
                 HeaderItem::Fun(def) => {
                     let closure = Rc::new(Closure {

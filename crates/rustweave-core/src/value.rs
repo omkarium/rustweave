@@ -6,6 +6,7 @@ use std::fmt;
 
 use crate::number::Number;
 use crate::temporal::{Date, DateTime, LocalDateTime, LocalTime, Period, Time, Zone};
+use crate::types::TypeValue;
 
 /// A runtime value.
 ///
@@ -35,6 +36,7 @@ pub enum Value {
     Regex(String),
     Uri(String),
     Key(String),
+    Type(Box<TypeValue>),
 }
 
 impl Value {
@@ -58,6 +60,7 @@ impl Value {
             Value::Regex(_) => "Regex",
             Value::Uri(_) => "Uri",
             Value::Key(_) => "Key",
+            Value::Type(_) => "Type",
         }
     }
 
@@ -271,6 +274,7 @@ impl Value {
             Value::Binary(bytes) => crate::temporal::base64_encode(bytes),
             Value::Regex(pattern) => pattern.clone(),
             Value::Uri(text) | Value::Key(text) => text.clone(),
+            Value::Type(value) => value.display(),
             _ => crate::json::write(self),
         }
     }
@@ -364,6 +368,7 @@ impl fmt::Debug for Value {
             Value::Binary(bytes) => write!(f, "{:?}", crate::temporal::base64_encode(bytes)),
             Value::Regex(pattern) => write!(f, "/{pattern}/"),
             Value::Uri(text) | Value::Key(text) => write!(f, "{text:?}"),
+            Value::Type(value) => write!(f, "{value}"),
         }
     }
 }

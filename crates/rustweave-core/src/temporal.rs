@@ -636,7 +636,7 @@ pub fn add_period_to_date_time(value: &DateTime, period: &Period) -> Result<Date
     let local = add_period_to_local_date_time(
         &LocalDateTime {
             date: value.date,
-            time: value.time.clone(),
+            time: value.time,
         },
         period,
     )?;
@@ -654,7 +654,7 @@ pub fn add_period_to_time(value: &Time, period: &Period) -> Result<Time, DwError
             month: 1,
             day: 1,
         },
-        time: value.time.clone(),
+        time: value.time,
     })
     .ok_or_else(|| DwError::new("time out of range"))?;
     let seconds = number_to_f64(&period.time_seconds)?;
@@ -676,7 +676,7 @@ pub fn add_period_to_local_time(value: &LocalTime, period: &Period) -> Result<Lo
             month: 1,
             day: 1,
         },
-        time: value.clone(),
+        time: *value,
     })
     .ok_or_else(|| DwError::new("time out of range"))?;
     let seconds = number_to_f64(&period.time_seconds)?;
@@ -925,14 +925,10 @@ pub fn month_name(month: u32, short: bool) -> &'static str {
 }
 
 pub fn month_from_name(name: &str) -> Option<u32> {
-    for month in 1..=12 {
-        if name.eq_ignore_ascii_case(month_name(month, false))
+    (1..=12).find(|&month| {
+        name.eq_ignore_ascii_case(month_name(month, false))
             || name.eq_ignore_ascii_case(month_name(month, true))
-        {
-            return Some(month);
-        }
-    }
-    None
+    })
 }
 
 pub fn weekday_name(weekday: u32, short: bool) -> &'static str {
@@ -955,14 +951,10 @@ pub fn weekday_name(weekday: u32, short: bool) -> &'static str {
 }
 
 pub fn weekday_from_name(name: &str) -> Option<u32> {
-    for day in 1..=7 {
-        if name.eq_ignore_ascii_case(weekday_name(day, false))
+    (1..=7).find(|&day| {
+        name.eq_ignore_ascii_case(weekday_name(day, false))
             || name.eq_ignore_ascii_case(weekday_name(day, true))
-        {
-            return Some(day);
-        }
-    }
-    None
+    })
 }
 
 pub fn hex_decode(text: &str) -> Result<Vec<u8>, DwError> {
@@ -1303,9 +1295,9 @@ fn field_text(
                 weekday.to_string()
             }
         }
-        'w' => pad_number(date.map(|d| week_of_year(d)).unwrap_or(1) as i64, count),
-        'W' => pad_number(date.map(|d| week_of_month(d)).unwrap_or(1) as i64, count),
-        'F' => pad_number(date.map(|d| week_of_month(d)).unwrap_or(1) as i64, count),
+        'w' => pad_number(date.map(week_of_year).unwrap_or(1) as i64, count),
+        'W' => pad_number(date.map(week_of_month).unwrap_or(1) as i64, count),
+        'F' => pad_number(date.map(week_of_month).unwrap_or(1) as i64, count),
         'H' => pad_number(time.map(|t| t.hour()).unwrap_or(0) as i64, count),
         'h' => {
             let hour = time.map(|t| t.hour()).unwrap_or(0);
@@ -1495,8 +1487,7 @@ fn parse_pattern_parts(
                     }
                 }
                 'u' | 'y' | 'Y' => {
-                    let text =
-                        read_digits(&chars, &mut position, count.min(2).max(1), count.max(4))?;
+                    let text = read_digits(&chars, &mut position, count.clamp(1, 2), count.max(4))?;
                     let mut value: i32 = text.parse().ok()?;
                     if text.len() == 2 {
                         value += 2000;

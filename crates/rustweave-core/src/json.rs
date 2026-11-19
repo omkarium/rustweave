@@ -188,6 +188,7 @@ fn write_value_options(value: &Value, level: usize, out: &mut String, options: &
         Value::Binary(bytes) => write_string(&crate::temporal::base64_encode(bytes), out),
         Value::Regex(pattern) => write_string(pattern, out),
         Value::Uri(text) | Value::Key(text) => write_string(text, out),
+        Value::Type(value) => write_string(&value.display(), out),
     }
 }
 
@@ -251,6 +252,7 @@ fn write_value(value: &Value, level: usize, out: &mut String) {
         Value::Binary(bytes) => write_string(&crate::temporal::base64_encode(bytes), out),
         Value::Regex(pattern) => write_string(pattern, out),
         Value::Uri(text) | Value::Key(text) => write_string(text, out),
+        Value::Type(value) => write_string(&value.display(), out),
     }
 }
 
