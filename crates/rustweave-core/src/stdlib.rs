@@ -158,6 +158,31 @@ const NAMES: &[&str] = &[
     "fromBinary",
     "fromRadixNumber",
     "toRadixNumber",
+    "atBeginningOfDay",
+    "atBeginningOfHour",
+    "atBeginningOfMonth",
+    "atBeginningOfWeek",
+    "atBeginningOfYear",
+    "date",
+    "dateTime",
+    "localDateTime",
+    "localTime",
+    "time",
+    "today",
+    "tomorrow",
+    "yesterday",
+    "between",
+    "days",
+    "duration",
+    "hours",
+    "minutes",
+    "months",
+    "period",
+    "seconds",
+    "years",
+    "daysBetween",
+    "isLeapYear",
+    "now",
 ];
 
 /// Returns the canonical built-in name for a function name.
@@ -262,6 +287,31 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "randomInt" => random_int(args),
         "uuid" => Ok(Value::String(uuid())),
         "log" => log(args),
+        "atBeginningOfDay" => at_beginning(args, "day"),
+        "atBeginningOfHour" => at_beginning(args, "hour"),
+        "atBeginningOfMonth" => at_beginning(args, "month"),
+        "atBeginningOfWeek" => at_beginning(args, "week"),
+        "atBeginningOfYear" => at_beginning(args, "year"),
+        "date" => date(args),
+        "dateTime" => date_time(args),
+        "localDateTime" => local_date_time(args),
+        "localTime" => local_time(args),
+        "time" => time(args),
+        "today" => Ok(Value::Date(crate::temporal::today())),
+        "tomorrow" => Ok(Value::Date(crate::temporal::today().add_days(1)?)),
+        "yesterday" => Ok(Value::Date(crate::temporal::today().add_days(-1)?)),
+        "between" => between(args),
+        "days" => make_days(args),
+        "duration" => duration(args),
+        "hours" => make_duration(args, 3_600),
+        "minutes" => make_duration(args, 60),
+        "months" => make_date_period(args, "months"),
+        "period" => period(args),
+        "seconds" => make_duration(args, 1),
+        "years" => make_date_period(args, "years"),
+        "daysBetween" => days_between(args),
+        "isLeapYear" => is_leap_year(args),
+        "now" => Ok(Value::DateTime(crate::temporal::now())),
         "countBy" => count_by(args),
         "sumBy" => sum_by(args),
         "some" => some(args),
@@ -600,6 +650,7 @@ fn size_of(args: &[RValue]) -> Result<Value, DwError> {
         Value::Object(entries) => entries.len(),
         Value::Number(number) => number.to_string().chars().count(),
         Value::Bool(value) => value.to_string().len(),
+        other => crate::json::write(other).chars().count(),
     };
     Ok(Value::Number(Number::from_usize(size)))
 }
@@ -2585,4 +2636,398 @@ fn radix_number(args: &[RValue], default_radix: u32, explicit: bool) -> Result<V
     let decimal = value.to_str_radix(10);
     let number = Number::parse(&decimal).ok_or_else(|| DwError::new("invalid number"))?;
     Ok(Value::Number(if negative { number.neg() } else { number }))
+}
+
+fn object_part(args: &[RValue], key: &str) -> Result<Value, DwError> {
+    let entries = object(args, 0)?;
+    entries
+        .into_iter()
+        .rev()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value)
+        .ok_or_else(|| DwError::new(format!("missing '{key}' in date factory")))
+}
+
+fn part_number(args: &[RValue], key: &str) -> Result<Number, DwError> {
+    match object_part(args, key)? {
+        Value::Number(number) => Ok(number),
+        other => Err(DwError::new(format!(
+            "expected Number for '{key}', found {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn part_i64(args: &[RValue], key: &str) -> Result<i64, DwError> {
+    part_number(args, key)?
+        .to_i64()
+        .ok_or_else(|| DwError::new(format!("expected a whole number for '{key}'")))
+}
+
+fn part_i32(args: &[RValue], key: &str) -> Result<i32, DwError> {
+    let value = part_i64(args, key)?;
+    i32::try_from(value).map_err(|_| DwError::new(format!("'{key}' is out of range")))
+}
+
+fn part_u32(args: &[RValue], key: &str) -> Result<u32, DwError> {
+    let value = part_i64(args, key)?;
+    u32::try_from(value).map_err(|_| DwError::new(format!("'{key}' is out of range")))
+}
+
+fn optional_number(args: &[RValue], key: &str) -> Result<Option<Number>, DwError> {
+    let entries = object(args, 0)?;
+    match entries.into_iter().rev().find(|(name, _)| name == key) {
+        Some((_, Value::Number(number))) => Ok(Some(number)),
+        Some((_, other)) => Err(DwError::new(format!(
+            "expected Number for '{key}', found {}",
+            other.type_name()
+        ))),
+        None => Ok(None),
+    }
+}
+
+fn validate_date(date: &crate::temporal::Date) -> Result<(), DwError> {
+    date.add_days(0).map(|_| ())
+}
+
+fn make_time(
+    hour: u32,
+    minute: u32,
+    second: u32,
+    nano: u32,
+) -> Result<crate::temporal::LocalTime, DwError> {
+    if hour > 23 || minute > 59 || second > 59 || nano > 999_999_999 {
+        return Err(DwError::new("time field is out of range"));
+    }
+    Ok(crate::temporal::LocalTime {
+        hour,
+        minute,
+        second,
+        nano,
+    })
+}
+
+fn date(args: &[RValue]) -> Result<Value, DwError> {
+    let date = crate::temporal::Date {
+        year: part_i32(args, "year")?,
+        month: part_u32(args, "month")?,
+        day: part_u32(args, "day")?,
+    };
+    validate_date(&date)?;
+    Ok(Value::Date(date))
+}
+
+fn zone_part(args: &[RValue]) -> Result<crate::temporal::Zone, DwError> {
+    let entries = object(args, 0)?;
+    for key in ["timezone", "timeZone"] {
+        if let Some((_, value)) = entries.iter().rev().find(|(name, _)| name == key) {
+            return match value {
+                Value::TimeZone(zone) => Ok(zone.clone()),
+                Value::String(text) => crate::temporal::Zone::parse(text)
+                    .ok_or_else(|| DwError::new("invalid time zone")),
+                other => Err(DwError::new(format!(
+                    "expected TimeZone, found {}",
+                    other.type_name()
+                ))),
+            };
+        }
+    }
+    Ok(crate::temporal::Zone::utc())
+}
+
+fn seconds_part(args: &[RValue], key: &str) -> Result<(u32, u32), DwError> {
+    let number = optional_number(args, key)?.unwrap_or_else(Number::zero);
+    let text = number.to_string();
+    let (whole, fraction) = match text.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (text.as_str(), None),
+    };
+    let whole: u32 = whole
+        .parse()
+        .map_err(|_| DwError::new(format!("'{key}' is out of range")))?;
+    let nano = match fraction {
+        Some(fraction) => crate::temporal::parse_fraction(fraction)
+            .ok_or_else(|| DwError::new("invalid fraction"))?,
+        None => 0,
+    };
+    Ok((whole, nano))
+}
+
+fn date_time(args: &[RValue]) -> Result<Value, DwError> {
+    let date = crate::temporal::Date {
+        year: part_i32(args, "year")?,
+        month: part_u32(args, "month")?,
+        day: part_u32(args, "day")?,
+    };
+    validate_date(&date)?;
+    let (second, nano) = seconds_part(args, "seconds")?;
+    let time = make_time(
+        part_u32(args, "hour")?,
+        part_u32(args, "minutes")?,
+        second,
+        nano,
+    )?;
+    Ok(Value::DateTime(crate::temporal::DateTime {
+        date,
+        time,
+        zone: zone_part(args)?,
+    }))
+}
+
+fn local_date_time(args: &[RValue]) -> Result<Value, DwError> {
+    let date = crate::temporal::Date {
+        year: part_i32(args, "year")?,
+        month: part_u32(args, "month")?,
+        day: part_u32(args, "day")?,
+    };
+    validate_date(&date)?;
+    let (second, nano) = seconds_part(args, "seconds")?;
+    let time = make_time(
+        part_u32(args, "hour")?,
+        part_u32(args, "minutes")?,
+        second,
+        nano,
+    )?;
+    Ok(Value::LocalDateTime(crate::temporal::LocalDateTime {
+        date,
+        time,
+    }))
+}
+
+fn local_time(args: &[RValue]) -> Result<Value, DwError> {
+    let (second, nano) = seconds_part(args, "seconds")?;
+    Ok(Value::LocalTime(make_time(
+        part_u32(args, "hour")?,
+        part_u32(args, "minutes")?,
+        second,
+        nano,
+    )?))
+}
+
+fn time(args: &[RValue]) -> Result<Value, DwError> {
+    let (second, nano) = seconds_part(args, "seconds")?;
+    Ok(Value::Time(crate::temporal::Time {
+        time: make_time(
+            part_u32(args, "hour")?,
+            part_u32(args, "minutes")?,
+            second,
+            nano,
+        )?,
+        zone: zone_part(args)?,
+    }))
+}
+
+fn at_beginning(args: &[RValue], part: &str) -> Result<Value, DwError> {
+    let value = value(args, 0)?.clone();
+    let zero_time = || crate::temporal::LocalTime {
+        hour: 0,
+        minute: 0,
+        second: 0,
+        nano: 0,
+    };
+    match value {
+        Value::Date(date) => {
+            let date = match part {
+                "month" => crate::temporal::Date {
+                    year: date.year,
+                    month: date.month,
+                    day: 1,
+                },
+                "week" => date.beginning_of_week()?,
+                "year" => crate::temporal::Date {
+                    year: date.year,
+                    month: 1,
+                    day: 1,
+                },
+                _ => date,
+            };
+            Ok(Value::Date(date))
+        }
+        Value::LocalTime(mut time) => {
+            if part == "hour" {
+                time.minute = 0;
+                time.second = 0;
+                time.nano = 0;
+            }
+            Ok(Value::LocalTime(time))
+        }
+        Value::Time(mut time) => {
+            if part == "hour" {
+                time.time.minute = 0;
+                time.time.second = 0;
+                time.time.nano = 0;
+            }
+            Ok(Value::Time(time))
+        }
+        Value::LocalDateTime(mut value) => {
+            if part == "month" {
+                value.date.month = 1;
+                value.date.day = 1;
+                value.time = zero_time();
+            } else if part == "week" {
+                value.date = value.date.beginning_of_week()?;
+                value.time = zero_time();
+            } else if part == "year" {
+                value.date.month = 1;
+                value.date.day = 1;
+                value.time = zero_time();
+            } else if part == "day" {
+                value.time = zero_time();
+            } else if part == "hour" {
+                value.time.minute = 0;
+                value.time.second = 0;
+                value.time.nano = 0;
+            }
+            Ok(Value::LocalDateTime(value))
+        }
+        Value::DateTime(mut value) => {
+            if part == "month" {
+                value.date.month = 1;
+                value.date.day = 1;
+                value.time = zero_time();
+            } else if part == "week" {
+                value.date = value.date.beginning_of_week()?;
+                value.time = zero_time();
+            } else if part == "year" {
+                value.date.month = 1;
+                value.date.day = 1;
+                value.time = zero_time();
+            } else if part == "day" {
+                value.time = zero_time();
+            } else if part == "hour" {
+                value.time.minute = 0;
+                value.time.second = 0;
+                value.time.nano = 0;
+            }
+            Ok(Value::DateTime(value))
+        }
+        other => Err(DwError::new(format!(
+            "cannot find the beginning of a {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn value_as_date(value: &Value) -> Result<crate::temporal::Date, DwError> {
+    match value {
+        Value::Date(date) => Ok(*date),
+        Value::DateTime(date) => Ok(date.date),
+        Value::LocalDateTime(date) => Ok(date.date),
+        Value::String(text) => crate::temporal::parse_date(text)
+            .or_else(|| match crate::temporal::parse_literal(text) {
+                Some(Value::Date(date)) => Some(date),
+                Some(Value::DateTime(date)) => Some(date.date),
+                Some(Value::LocalDateTime(date)) => Some(date.date),
+                _ => None,
+            })
+            .ok_or_else(|| DwError::new(format!("cannot read '{text}' as a Date"))),
+        other => Err(DwError::new(format!(
+            "expected a Date, found {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn between(args: &[RValue]) -> Result<Value, DwError> {
+    let end = value_as_date(value(args, 0)?)?;
+    let start = value_as_date(value(args, 1)?)?;
+    Ok(Value::Period(crate::temporal::period_between(
+        &start, &end,
+    )?))
+}
+
+fn make_days(args: &[RValue]) -> Result<Value, DwError> {
+    let number = number(args, 0)?;
+    if number.is_integer() {
+        let days = number
+            .to_i64()
+            .ok_or_else(|| DwError::new("days is out of range"))?;
+        Ok(Value::Period(crate::temporal::date_period(0, 0, days)))
+    } else {
+        Ok(Value::Period(crate::temporal::duration_period(
+            number.mul(&Number::from_i64(86_400)),
+        )))
+    }
+}
+
+fn make_duration(args: &[RValue], multiplier: i64) -> Result<Value, DwError> {
+    let number = number(args, 0)?;
+    Ok(Value::Period(crate::temporal::duration_period(
+        number.mul(&Number::from_i64(multiplier)),
+    )))
+}
+
+fn make_date_period(args: &[RValue], unit: &str) -> Result<Value, DwError> {
+    let number = number(args, 0)?;
+    let value = number
+        .to_i64()
+        .ok_or_else(|| DwError::new(format!("{unit} must be a whole number")))?;
+    Ok(Value::Period(match unit {
+        "months" => crate::temporal::date_period(0, value, 0),
+        "years" => crate::temporal::date_period(value, 0, 0),
+        _ => crate::temporal::date_period(0, 0, value),
+    }))
+}
+
+fn period(args: &[RValue]) -> Result<Value, DwError> {
+    let years = optional_number(args, "years")?
+        .map(|number| {
+            number
+                .to_i64()
+                .ok_or_else(|| DwError::new("years must be a whole number"))
+        })
+        .transpose()?
+        .unwrap_or(0);
+    let months = optional_number(args, "months")?
+        .map(|number| {
+            number
+                .to_i64()
+                .ok_or_else(|| DwError::new("months must be a whole number"))
+        })
+        .transpose()?
+        .unwrap_or(0);
+    let days = optional_number(args, "days")?
+        .map(|number| {
+            number
+                .to_i64()
+                .ok_or_else(|| DwError::new("days must be a whole number"))
+        })
+        .transpose()?
+        .unwrap_or(0);
+    Ok(Value::Period(crate::temporal::date_period(
+        years, months, days,
+    )))
+}
+
+fn duration(args: &[RValue]) -> Result<Value, DwError> {
+    let mut seconds = Number::zero();
+    for (key, multiplier) in [
+        ("days", 86_400i64),
+        ("hours", 3_600),
+        ("minutes", 60),
+        ("seconds", 1),
+    ] {
+        if let Some(number) = optional_number(args, key)? {
+            seconds = seconds.add(&number.mul(&Number::from_i64(multiplier)));
+        }
+    }
+    Ok(Value::Period(crate::temporal::duration_period(seconds)))
+}
+
+fn days_between(args: &[RValue]) -> Result<Value, DwError> {
+    let from = value_as_date(value(args, 0)?)?;
+    let to = value_as_date(value(args, 1)?)?;
+    Ok(Value::Number(Number::from_i64(
+        crate::temporal::date_difference(&from, &to)?,
+    )))
+}
+
+fn year_of(value: &Value) -> Result<i32, DwError> {
+    Ok(value_as_date(value)?.year)
+}
+
+fn is_leap_year(args: &[RValue]) -> Result<Value, DwError> {
+    let year = year_of(value(args, 0)?)?;
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    Ok(Value::Bool(leap))
 }

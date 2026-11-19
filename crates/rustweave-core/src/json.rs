@@ -91,6 +91,18 @@ fn write_value(value: &Value, level: usize, out: &mut String) {
             indent(level, out);
             out.push('}');
         }
+        Value::Date(date) => write_string(&crate::temporal::format_date(date), out),
+        Value::DateTime(date) => write_string(&crate::temporal::format_date_time(date), out),
+        Value::LocalDateTime(date) => {
+            write_string(&crate::temporal::format_local_date_time(date), out)
+        }
+        Value::LocalTime(time) => write_string(&crate::temporal::format_local_time(time), out),
+        Value::Time(time) => write_string(&crate::temporal::format_time(time), out),
+        Value::TimeZone(zone) => write_string(&zone.label(), out),
+        Value::Period(period) => write_string(&crate::temporal::format_period(period), out),
+        Value::Binary(bytes) => write_string(&crate::temporal::base64_encode(bytes), out),
+        Value::Regex(pattern) => write_string(pattern, out),
+        Value::Uri(text) | Value::Key(text) => write_string(text, out),
     }
 }
 

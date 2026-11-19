@@ -18,6 +18,7 @@ pub enum Token {
     Ident(String),
     Number(String),
     Str(String),
+    Literal(String),
     Interp(Vec<InterpPart>),
     Regex(String),
     LParen,
@@ -142,6 +143,19 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
             '?' => {
                 tokens.push(Token::Question);
                 pos += 1;
+            }
+            '|' => {
+                pos += 1;
+                let start = pos;
+                while pos < chars.len() && chars[pos] != '|' {
+                    pos += 1;
+                }
+                if pos >= chars.len() {
+                    return Err(DwError::new("unterminated literal"));
+                }
+                let text: String = chars[start..pos].iter().collect();
+                pos += 1;
+                tokens.push(Token::Literal(text));
             }
             '$' => {
                 let mut name = String::new();

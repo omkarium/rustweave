@@ -33,6 +33,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+chrono.workspace = true
 num-bigint.workspace = true
 num-traits.workspace = true
 regex.workspace = true

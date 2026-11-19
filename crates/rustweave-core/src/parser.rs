@@ -345,7 +345,12 @@ impl Parser {
                                 )))
                             }
                         };
-                        left = Expr::As(Box::new(left), type_name);
+                        let options = if self.peek() == &Token::LBrace {
+                            Some(Box::new(self.parse_object()?))
+                        } else {
+                            None
+                        };
+                        left = Expr::As(Box::new(left), type_name, options);
                     } else if name == "is" {
                         if 60 < min_bp {
                             break;
@@ -418,6 +423,10 @@ impl Parser {
             Token::Str(text) => {
                 self.advance();
                 Ok(Expr::String(text))
+            }
+            Token::Literal(text) => {
+                self.advance();
+                Ok(Expr::Literal(text))
             }
             Token::Regex(pattern) => {
                 self.advance();

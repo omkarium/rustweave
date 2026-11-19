@@ -151,6 +151,8 @@ mod number;
 mod parser;
 mod runtime;
 mod stdlib;
+#[allow(dead_code)]
+mod temporal;
 pub mod value;
 
 use std::rc::Rc;

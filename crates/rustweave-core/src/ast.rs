@@ -31,6 +31,8 @@ pub enum Expr {
     Number(Number),
     /// A string literal.
     String(String),
+    /// A `|...|` temporal or binary literal.
+    Literal(String),
     /// A regular-expression literal.
     Regex(String),
     /// A string containing embedded expressions.
@@ -61,8 +63,8 @@ pub enum Expr {
     SafeIndex(Box<Expr>, Box<Expr>),
     /// A function call written in infix form.
     Infix(String, Box<Expr>, Box<Expr>),
-    /// A type cast with `as`.
-    As(Box<Expr>, String),
+    /// A type cast with `as` and optional options.
+    As(Box<Expr>, String, Option<Box<Expr>>),
     /// A type test with `is`.
     Is(Box<Expr>, String),
     /// A `default` fallback.
@@ -129,7 +131,14 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
             contains_placeholder(target) || contains_placeholder(index)
         }
         Expr::Infix(_, left, right) => contains_placeholder(left) || contains_placeholder(right),
-        Expr::As(inner, _) | Expr::Is(inner, _) => contains_placeholder(inner),
+        Expr::As(inner, _, options) => {
+            contains_placeholder(inner)
+                || options
+                    .as_ref()
+                    .map(|options| contains_placeholder(options))
+                    .unwrap_or(false)
+        }
+        Expr::Is(inner, _) => contains_placeholder(inner),
         Expr::Default(left, right) => contains_placeholder(left) || contains_placeholder(right),
         Expr::ArrayCons(head, tail) => contains_placeholder(head) || contains_placeholder(tail),
         Expr::Match(subject, arms) => {
@@ -148,6 +157,11 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
             InterpSegment::Text(_) => false,
             InterpSegment::Expr(expr) => contains_placeholder(expr),
         }),
-        Expr::Null | Expr::Bool(_) | Expr::Number(_) | Expr::String(_) | Expr::Regex(_) => false,
+        Expr::Null
+        | Expr::Bool(_)
+        | Expr::Number(_)
+        | Expr::String(_)
+        | Expr::Literal(_)
+        | Expr::Regex(_) => false,
     }
 }

@@ -17,6 +17,9 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
         Expr::Bool(value) => Ok(RValue::Val(Value::Bool(*value))),
         Expr::Number(number) => Ok(RValue::Val(Value::Number(number.clone()))),
         Expr::String(text) => Ok(RValue::Val(Value::String(text.clone()))),
+        Expr::Literal(text) => crate::temporal::parse_literal(text)
+            .map(RValue::Val)
+            .ok_or_else(|| DwError::new(format!("invalid literal '|{text}|'"))),
         Expr::Regex(pattern) => Ok(RValue::Regex(pattern.clone())),
         Expr::Interp(parts) => {
             let mut text = String::new();
@@ -130,9 +133,13 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
             );
             eval(&call, env)
         }
-        Expr::As(inner, type_name) => {
+        Expr::As(inner, type_name, options) => {
             let value = as_value(eval(inner, env)?)?;
-            cast(value, type_name).map(RValue::Val)
+            let options = match options {
+                Some(options) => Some(as_value(eval(options, env)?)?),
+                None => None,
+            };
+            cast(value, type_name, options.as_ref()).map(RValue::Val)
         }
         Expr::Is(inner, type_name) => {
             let value = as_value(eval(inner, env)?)?;
@@ -162,6 +169,14 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
 fn select_field(target: &Value, field: &str) -> Result<Value, DwError> {
     match target {
         Value::Object(_) => Ok(target.get(field).cloned().unwrap_or(Value::Null)),
+        Value::Date(_)
+        | Value::DateTime(_)
+        | Value::LocalDateTime(_)
+        | Value::LocalTime(_)
+        | Value::Time(_)
+        | Value::Period(_) => target
+            .temporal_field(field)
+            .ok_or_else(|| DwError::new(format!("unknown date field '{field}'"))),
         Value::Array(items) => Ok(Value::Array(
             items
                 .iter()
@@ -580,11 +595,114 @@ fn eval_binary(op: BinOp, left: &Expr, right: &Expr, env: &Env) -> Result<RValue
     }
 }
 
+fn period_default_number(period: &crate::temporal::Period) -> Number {
+    if period.date_based {
+        Number::from_i64(period.years * 12 + period.months)
+    } else {
+        period.time_seconds.clone()
+    }
+}
+
+fn period_plus(left: &crate::temporal::Period, right: &crate::temporal::Period) -> Number {
+    period_default_number(left).add(&period_default_number(right))
+}
+
+fn local_time_seconds(time: &crate::temporal::LocalTime) -> i64 {
+    time.hour as i64 * 3600 + time.minute as i64 * 60 + time.second as i64
+}
+
+fn time_seconds(time: &crate::temporal::Time) -> Number {
+    let base = local_time_seconds(&time.time) - time.zone.seconds() as i64;
+    let mut value = Number::from_i64(base);
+    if time.time.nano != 0 {
+        if let Some(fraction) =
+            Number::from_i64(time.time.nano as i64).div(&Number::from_i64(1_000_000_000))
+        {
+            value = value.add(&fraction);
+        }
+    }
+    value
+}
+
+fn add_period(
+    value: &Value,
+    period: &crate::temporal::Period,
+    subtract: bool,
+) -> Result<Option<Value>, DwError> {
+    let result = match value {
+        Value::Date(date) => {
+            let date = if subtract {
+                crate::temporal::subtract_period_from_date(date, period)?
+            } else {
+                crate::temporal::add_period_to_date(date, period)?
+            };
+            Value::Date(date)
+        }
+        Value::LocalTime(time) => {
+            let time = if subtract {
+                let mut negated = period.clone();
+                negated.years = -negated.years;
+                negated.months = -negated.months;
+                negated.days = -negated.days;
+                negated.time_seconds = negated.time_seconds.neg();
+                crate::temporal::add_period_to_local_time(time, &negated)?
+            } else {
+                crate::temporal::add_period_to_local_time(time, period)?
+            };
+            Value::LocalTime(time)
+        }
+        Value::Time(time) => {
+            let time = if subtract {
+                let mut negated = period.clone();
+                negated.years = -negated.years;
+                negated.months = -negated.months;
+                negated.days = -negated.days;
+                negated.time_seconds = negated.time_seconds.neg();
+                crate::temporal::add_period_to_time(time, &negated)?
+            } else {
+                crate::temporal::add_period_to_time(time, period)?
+            };
+            Value::Time(time)
+        }
+        Value::LocalDateTime(value) => {
+            let value = if subtract {
+                crate::temporal::subtract_period_from_local_date_time(value, period)?
+            } else {
+                crate::temporal::add_period_to_local_date_time(value, period)?
+            };
+            Value::LocalDateTime(value)
+        }
+        Value::DateTime(value) => {
+            let value = if subtract {
+                crate::temporal::subtract_period_from_date_time(value, period)?
+            } else {
+                crate::temporal::add_period_to_date_time(value, period)?
+            };
+            Value::DateTime(value)
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(result))
+}
+
 /// Implements `+`, including array append and numeric-string coercion.
 fn add(left: Value, right: Value) -> Result<RValue, DwError> {
     if let Value::Array(mut items) = left {
         items.push(right);
         return Ok(RValue::Val(Value::Array(items)));
+    }
+    if let (Value::Period(a), Value::Period(b)) = (&left, &right) {
+        return Ok(RValue::Val(Value::Number(period_plus(a, b))));
+    }
+    if let Value::Period(period) = &right {
+        if let Some(value) = add_period(&left, period, false)? {
+            return Ok(RValue::Val(value));
+        }
+    }
+    if let Value::Period(period) = &left {
+        if let Some(value) = add_period(&right, period, false)? {
+            return Ok(RValue::Val(value));
+        }
     }
     if matches!(right, Value::Array(_)) {
         return Err(DwError::new("cannot add an array to a scalar"));
@@ -607,6 +725,51 @@ fn subtract(left: Value, right: Value) -> Result<RValue, DwError> {
             .filter(|item| *item != right)
             .collect::<Vec<_>>();
         return Ok(RValue::Val(Value::Array(filtered)));
+    }
+    match (&left, &right) {
+        (Value::Date(a), Value::Date(b)) => {
+            let days = crate::temporal::date_difference(b, a)?;
+            return Ok(RValue::Val(Value::Period(
+                crate::temporal::duration_period(Number::from_i64(days * 86_400)),
+            )));
+        }
+        (Value::DateTime(a), Value::DateTime(b)) => {
+            let seconds = crate::temporal::date_time_difference(b, a)?;
+            return Ok(RValue::Val(Value::Period(
+                crate::temporal::duration_period(seconds),
+            )));
+        }
+        (Value::LocalDateTime(a), Value::LocalDateTime(b)) => {
+            let seconds = crate::temporal::local_date_time_difference(b, a)?;
+            return Ok(RValue::Val(Value::Period(
+                crate::temporal::duration_period(seconds),
+            )));
+        }
+        (Value::Time(a), Value::Time(b)) => {
+            let left = time_seconds(a);
+            let right = time_seconds(b);
+            return Ok(RValue::Val(Value::Period(
+                crate::temporal::duration_period(left.sub(&right)),
+            )));
+        }
+        (Value::LocalTime(a), Value::LocalTime(b)) => {
+            let left = Number::from_i64(local_time_seconds(a));
+            let right = Number::from_i64(local_time_seconds(b));
+            return Ok(RValue::Val(Value::Period(
+                crate::temporal::duration_period(left.sub(&right)),
+            )));
+        }
+        (Value::Period(a), Value::Period(b)) => {
+            return Ok(RValue::Val(Value::Number(
+                period_default_number(a).sub(&period_default_number(b)),
+            )));
+        }
+        (_, Value::Period(period)) => {
+            if let Some(value) = add_period(&left, period, true)? {
+                return Ok(RValue::Val(value));
+            }
+        }
+        _ => {}
     }
     match (numeric_operand(&left), numeric_operand(&right)) {
         (Some(a), Some(b)) => Ok(RValue::Val(Value::Number(a.sub(&b)))),
@@ -677,6 +840,39 @@ fn concat(left: Value, right: Value) -> Result<RValue, DwError> {
     if matches!(left, Value::Null) || matches!(right, Value::Null) {
         return Err(DwError::new("cannot concatenate null"));
     }
+    match (&left, &right) {
+        (Value::Date(date), Value::LocalTime(time)) => {
+            return Ok(RValue::Val(Value::LocalDateTime(
+                crate::temporal::LocalDateTime {
+                    date: *date,
+                    time: *time,
+                },
+            )));
+        }
+        (Value::LocalTime(time), Value::Date(date)) => {
+            return Ok(RValue::Val(Value::LocalDateTime(
+                crate::temporal::LocalDateTime {
+                    date: *date,
+                    time: *time,
+                },
+            )));
+        }
+        (Value::Date(date), Value::Time(time)) => {
+            return Ok(RValue::Val(Value::DateTime(crate::temporal::DateTime {
+                date: *date,
+                time: time.time,
+                zone: time.zone.clone(),
+            })));
+        }
+        (Value::Time(time), Value::Date(date)) => {
+            return Ok(RValue::Val(Value::DateTime(crate::temporal::DateTime {
+                date: *date,
+                time: time.time,
+                zone: time.zone.clone(),
+            })));
+        }
+        _ => {}
+    }
     match (left, right) {
         (Value::Array(mut a), Value::Array(b)) => {
             a.extend(b);
@@ -717,6 +913,11 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
         (Value::Number(a), Value::Number(b)) => Some(a.cmp(b)),
         (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
         (Value::Bool(a), Value::Bool(b)) => Some(a.cmp(b)),
+        (Value::Date(a), Value::Date(b)) => a.partial_cmp(b),
+        (Value::DateTime(a), Value::DateTime(b)) => a.partial_cmp(b),
+        (Value::LocalDateTime(a), Value::LocalDateTime(b)) => a.partial_cmp(b),
+        (Value::LocalTime(a), Value::LocalTime(b)) => a.partial_cmp(b),
+        (Value::Time(a), Value::Time(b)) => a.partial_cmp(b),
         (Value::Number(a), Value::String(b)) => Number::parse(b).map(|b| a.cmp(&b)),
         (Value::String(a), Value::Number(b)) => Number::parse(a).map(|a| a.cmp(b)),
         _ => None,
@@ -742,28 +943,292 @@ fn is_type(value: &Value, type_name: &str) -> bool {
         "Array" => matches!(value, Value::Array(_)),
         "Object" => matches!(value, Value::Object(_)),
         "Null" => matches!(value, Value::Null),
+        "Date" => matches!(value, Value::Date(_)),
+        "DateTime" => matches!(value, Value::DateTime(_)),
+        "LocalDateTime" => matches!(value, Value::LocalDateTime(_)),
+        "LocalTime" => matches!(value, Value::LocalTime(_)),
+        "Time" => matches!(value, Value::Time(_)),
+        "TimeZone" => matches!(value, Value::TimeZone(_)),
+        "Period" => matches!(value, Value::Period(_)),
+        "Binary" => matches!(value, Value::Binary(_)),
+        "Regex" => matches!(value, Value::Regex(_)),
+        "Uri" | "URI" => matches!(value, Value::Uri(_)),
+        "Key" => matches!(value, Value::Key(_)),
         _ => false,
     }
 }
 
-/// Converts a value with `as`, supporting the built-in scalar and collection types.
-fn cast(value: Value, type_name: &str) -> Result<Value, DwError> {
+fn option_text(options: Option<&Value>, key: &str) -> Option<String> {
+    options
+        .and_then(|value| value.get(key))
+        .and_then(|value| match value {
+            Value::String(text) => Some(text.clone()),
+            _ => None,
+        })
+}
+
+fn temporal_string(value: &Value, format: Option<&str>) -> String {
+    let pattern = format.unwrap_or("");
+    match value {
+        Value::Date(date) => {
+            if pattern.is_empty() {
+                crate::temporal::format_date(date)
+            } else {
+                crate::temporal::format_pattern(Some(date), None, None, pattern)
+            }
+        }
+        Value::DateTime(date) => {
+            if pattern.is_empty() {
+                crate::temporal::format_date_time(date)
+            } else {
+                crate::temporal::format_pattern(
+                    Some(&date.date),
+                    Some(&date.time),
+                    Some(&date.zone),
+                    pattern,
+                )
+            }
+        }
+        Value::LocalDateTime(date) => {
+            if pattern.is_empty() {
+                crate::temporal::format_local_date_time(date)
+            } else {
+                crate::temporal::format_pattern(Some(&date.date), Some(&date.time), None, pattern)
+            }
+        }
+        Value::LocalTime(time) => {
+            if pattern.is_empty() {
+                crate::temporal::format_local_time(time)
+            } else {
+                crate::temporal::format_pattern(None, Some(time), None, pattern)
+            }
+        }
+        Value::Time(time) => {
+            if pattern.is_empty() {
+                crate::temporal::format_time(time)
+            } else {
+                crate::temporal::format_pattern(None, Some(&time.time), Some(&time.zone), pattern)
+            }
+        }
+        Value::Period(period) => crate::temporal::format_period(period),
+        Value::TimeZone(zone) => zone.label(),
+        Value::Regex(pattern) => pattern.clone(),
+        Value::Uri(text) | Value::Key(text) => text.clone(),
+        other => crate::json::write(other),
+    }
+}
+
+fn pattern_from(options: Option<&Value>) -> Option<String> {
+    option_text(options, "format").or_else(|| option_text(options, "unit"))
+}
+
+fn parse_date_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
+    match value {
+        Value::Date(_) => Ok(value.clone()),
+        Value::DateTime(date) => Ok(Value::Date(date.date)),
+        Value::LocalDateTime(date) => Ok(Value::Date(date.date)),
+        Value::String(text) => {
+            let parsed = match format {
+                Some(pattern) if !pattern.is_empty() => {
+                    crate::temporal::parse_date_pattern(text, pattern)
+                }
+                _ => crate::temporal::parse_date(text)
+                    .or_else(|| crate::temporal::parse_date_pattern(text, "uuuu/MM/dd")),
+            };
+            parsed
+                .map(Value::Date)
+                .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Date")))
+        }
+        other => Err(DwError::new(format!(
+            "cannot convert {} to Date",
+            other.type_name()
+        ))),
+    }
+}
+
+fn parse_date_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
+    match value {
+        Value::DateTime(_) => Ok(value.clone()),
+        Value::LocalDateTime(date) => Ok(Value::DateTime(crate::temporal::DateTime {
+            date: date.date,
+            time: date.time,
+            zone: crate::temporal::Zone::utc(),
+        })),
+        Value::String(text) => {
+            if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
+                return crate::temporal::parse_date_time_pattern(text, pattern)
+                    .map(Value::DateTime)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to DateTime")));
+            }
+            match crate::temporal::parse_literal(text) {
+                Some(Value::DateTime(value)) => Ok(Value::DateTime(value)),
+                _ => crate::temporal::parse_date_time_pattern(text, "uuuu-MM-dd'T'HH:mm:ssXXX")
+                    .or_else(|| {
+                        crate::temporal::parse_date_time_pattern(text, "uuuu-MM-dd HH:mm:ssXXX")
+                    })
+                    .map(Value::DateTime)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to DateTime"))),
+            }
+        }
+        other => Err(DwError::new(format!(
+            "cannot convert {} to DateTime",
+            other.type_name()
+        ))),
+    }
+}
+
+fn parse_local_date_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
+    match value {
+        Value::LocalDateTime(_) => Ok(value.clone()),
+        Value::DateTime(date) => Ok(Value::LocalDateTime(crate::temporal::LocalDateTime {
+            date: date.date,
+            time: date.time,
+        })),
+        Value::String(text) => {
+            if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
+                return crate::temporal::parse_local_date_time_pattern(text, pattern)
+                    .map(Value::LocalDateTime)
+                    .ok_or_else(|| {
+                        DwError::new(format!("cannot convert '{text}' to LocalDateTime"))
+                    });
+            }
+            match crate::temporal::parse_literal(text) {
+                Some(Value::LocalDateTime(value)) => Ok(Value::LocalDateTime(value)),
+                _ => crate::temporal::parse_local_date_time_pattern(text, "uuuu-MM-dd'T'HH:mm:ss")
+                    .or_else(|| {
+                        crate::temporal::parse_local_date_time_pattern(text, "uuuu-MM-dd HH:mm:ss")
+                    })
+                    .map(Value::LocalDateTime)
+                    .ok_or_else(|| {
+                        DwError::new(format!("cannot convert '{text}' to LocalDateTime"))
+                    }),
+            }
+        }
+        other => Err(DwError::new(format!(
+            "cannot convert {} to LocalDateTime",
+            other.type_name()
+        ))),
+    }
+}
+
+fn parse_local_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
+    match value {
+        Value::LocalTime(_) => Ok(value.clone()),
+        Value::Time(time) => Ok(Value::LocalTime(time.time)),
+        Value::String(text) => {
+            if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
+                return crate::temporal::parse_local_time_pattern(text, pattern)
+                    .map(Value::LocalTime)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to LocalTime")));
+            }
+            match crate::temporal::parse_literal(text) {
+                Some(Value::LocalTime(value)) => Ok(Value::LocalTime(value)),
+                _ => crate::temporal::parse_local_time_pattern(text, "HH:mm:ss")
+                    .or_else(|| crate::temporal::parse_local_time_pattern(text, "HH:mm"))
+                    .map(Value::LocalTime)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to LocalTime"))),
+            }
+        }
+        other => Err(DwError::new(format!(
+            "cannot convert {} to LocalTime",
+            other.type_name()
+        ))),
+    }
+}
+
+fn parse_time_value(value: &Value, format: Option<&str>) -> Result<Value, DwError> {
+    match value {
+        Value::Time(_) => Ok(value.clone()),
+        Value::LocalTime(time) => Ok(Value::Time(crate::temporal::Time {
+            time: *time,
+            zone: crate::temporal::Zone::utc(),
+        })),
+        Value::String(text) => {
+            if let Some(pattern) = format.filter(|pattern| !pattern.is_empty()) {
+                return crate::temporal::parse_time_pattern(text, pattern)
+                    .map(Value::Time)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Time")));
+            }
+            match crate::temporal::parse_literal(text) {
+                Some(Value::Time(value)) => Ok(Value::Time(value)),
+                _ => crate::temporal::parse_time_pattern(text, "HH:mm:ssXXX")
+                    .or_else(|| crate::temporal::parse_time_pattern(text, "HH:mm:ss"))
+                    .map(Value::Time)
+                    .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Time"))),
+            }
+        }
+        other => Err(DwError::new(format!(
+            "cannot convert {} to Time",
+            other.type_name()
+        ))),
+    }
+}
+
+fn period_to_number(
+    period: &crate::temporal::Period,
+    unit: Option<&str>,
+) -> Result<Number, DwError> {
+    let unit = unit.unwrap_or(if period.date_based {
+        "months"
+    } else {
+        "seconds"
+    });
+    let years = Number::from_i64(period.years);
+    let months = Number::from_i64(period.months);
+    let days = Number::from_i64(period.days);
+    match unit {
+        "years" => {
+            let months_part = months
+                .div(&Number::from_i64(12))
+                .unwrap_or_else(Number::zero);
+            Ok(years.add(&months_part))
+        }
+        "months" => Ok(years.mul(&Number::from_i64(12)).add(&months)),
+        "days" => Ok(years
+            .mul(&Number::from_i64(365))
+            .add(&months.mul(&Number::from_i64(30)))
+            .add(&days)),
+        "nanos" => Ok(period.time_seconds.mul(&Number::from_i64(1_000_000_000))),
+        "milliseconds" | "millis" => Ok(period.time_seconds.mul(&Number::from_i64(1_000))),
+        "seconds" => Ok(period.time_seconds.clone()),
+        "minutes" => Ok(period
+            .time_seconds
+            .div(&Number::from_i64(60))
+            .unwrap_or_else(Number::zero)),
+        "hours" => Ok(period
+            .time_seconds
+            .div(&Number::from_i64(3_600))
+            .unwrap_or_else(Number::zero)),
+        other => Err(DwError::new(format!("unsupported period unit '{other}'"))),
+    }
+}
+
+/// Converts a value with `as`, supporting scalar, collection, temporal, and binary types.
+fn cast(value: Value, type_name: &str, options: Option<&Value>) -> Result<Value, DwError> {
     let base = type_name.split('{').next().unwrap_or(type_name).trim();
+    let format = pattern_from(options);
     match base {
         "Any" => Ok(value),
-        "String" => Ok(Value::String(match value {
-            Value::String(text) => text,
-            Value::Null => "null".to_string(),
-            Value::Bool(value) => value.to_string(),
-            Value::Number(number) => number.to_string(),
-            other => crate::json::write(&other),
-        })),
+        "String" => Ok(Value::String(temporal_string(&value, format.as_deref()))),
         "Number" => match value {
             Value::Number(_) => Ok(value),
             Value::String(text) => Number::parse(&text)
                 .map(Value::Number)
                 .ok_or_else(|| DwError::new("cannot convert string to number")),
             Value::Bool(value) => Ok(Value::Number(Number::from_i64(if value { 1 } else { 0 }))),
+            Value::DateTime(date) => {
+                let millis = matches!(format.as_deref(), Some("milliseconds" | "millis"));
+                crate::temporal::timestamp_seconds(&date).map(|seconds| {
+                    Value::Number(Number::from_i64(if millis {
+                        seconds * 1000
+                    } else {
+                        seconds
+                    }))
+                })
+            }
+            Value::Period(period) => {
+                period_to_number(&period, format.as_deref()).map(Value::Number)
+            }
             other => Err(DwError::new(format!(
                 "cannot convert {} to number",
                 other.type_name()
@@ -771,8 +1236,8 @@ fn cast(value: Value, type_name: &str) -> Result<Value, DwError> {
         },
         "Boolean" => match value {
             Value::Bool(_) => Ok(value),
-            Value::String(text) if text == "true" => Ok(Value::Bool(true)),
-            Value::String(text) if text == "false" => Ok(Value::Bool(false)),
+            Value::String(text) if text.eq_ignore_ascii_case("true") => Ok(Value::Bool(true)),
+            Value::String(text) if text.eq_ignore_ascii_case("false") => Ok(Value::Bool(false)),
             other => Err(DwError::new(format!(
                 "cannot convert {} to boolean",
                 other.type_name()
@@ -780,6 +1245,7 @@ fn cast(value: Value, type_name: &str) -> Result<Value, DwError> {
         },
         "Array" => match value {
             Value::Array(_) => Ok(value),
+            Value::Null => Ok(Value::Array(Vec::new())),
             other => Ok(Value::Array(vec![other])),
         },
         "Object" => match value {
@@ -790,6 +1256,70 @@ fn cast(value: Value, type_name: &str) -> Result<Value, DwError> {
             ))),
         },
         "Null" => Ok(Value::Null),
+        "Date" => parse_date_value(&value, format.as_deref()),
+        "DateTime" => match value {
+            Value::Number(number) => {
+                let millis = matches!(format.as_deref(), Some("milliseconds" | "millis"));
+                let value = number
+                    .to_i64()
+                    .ok_or_else(|| DwError::new("expected an integer timestamp"))?;
+                crate::temporal::utc_date_time_from_timestamp(value, millis).map(Value::DateTime)
+            }
+            other => parse_date_time_value(&other, format.as_deref()),
+        },
+        "LocalDateTime" => parse_local_date_time_value(&value, format.as_deref()),
+        "LocalTime" => parse_local_time_value(&value, format.as_deref()),
+        "Time" => parse_time_value(&value, format.as_deref()),
+        "TimeZone" => match value {
+            Value::TimeZone(_) => Ok(value),
+            Value::String(text) => crate::temporal::Zone::parse(&text)
+                .map(Value::TimeZone)
+                .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to TimeZone"))),
+            other => Err(DwError::new(format!(
+                "cannot convert {} to TimeZone",
+                other.type_name()
+            ))),
+        },
+        "Period" => match value {
+            Value::Period(_) => Ok(value),
+            Value::String(text) => crate::temporal::parse_period(&text)
+                .map(Value::Period)
+                .ok_or_else(|| DwError::new(format!("cannot convert '{text}' to Period"))),
+            other => Err(DwError::new(format!(
+                "cannot convert {} to Period",
+                other.type_name()
+            ))),
+        },
+        "Binary" => match value {
+            Value::Binary(_) => Ok(value),
+            Value::String(text) => {
+                let base = option_text(options, "base").unwrap_or_default();
+                let bytes = match base.as_str() {
+                    "16" | "hex" => crate::temporal::hex_decode(&text)?,
+                    "64" | "base64" => crate::temporal::base64_decode(&text)?,
+                    _ => text.into_bytes(),
+                };
+                Ok(Value::Binary(bytes))
+            }
+            other => Err(DwError::new(format!(
+                "cannot convert {} to Binary",
+                other.type_name()
+            ))),
+        },
+        "Regex" => match value {
+            Value::Regex(_) => Ok(value),
+            Value::String(text) => Ok(Value::Regex(text)),
+            other => Err(DwError::new(format!(
+                "cannot convert {} to Regex",
+                other.type_name()
+            ))),
+        },
+        "Uri" | "URI" => match value {
+            Value::Uri(_) => Ok(value),
+            Value::String(text) => Ok(Value::Uri(text)),
+            other => Ok(Value::Uri(other.key_string())),
+        },
+        "Key" => Ok(Value::Key(value.key_string())),
         other => Err(DwError::new(format!("unsupported type '{other}'"))),
     }
 }
