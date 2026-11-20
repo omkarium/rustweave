@@ -129,7 +129,7 @@ Add the core crate to `Cargo.toml`:
 
 ```toml
 [dependencies]
-rustweave-core = "0.2"
+rustweave-core = "0.3"
 ```
 
 ```rust
@@ -155,9 +155,9 @@ The crate also exposes:
 - `rustweave_core::Value`, the runtime value type.
 - `rustweave_core::json::parse` and `rustweave_core::json::write` for JSON input and output.
 
-## Function catalog
+## Function index
 
-The `rustweave_core::functions` module provides a typed catalog of every supported function,
+The `rustweave_core::functions` module provides a typed index of every supported function,
 including its DataWeave namespace and a short description. The complete list is available as
 [`Function::ALL`](https://docs.rs/rustweave-core/latest/rustweave_core/functions/struct.Function.html#associatedconstant.ALL).
 
@@ -227,13 +227,13 @@ Transform every leaf in a tree:
 import * from dw::util::Tree
 output application/json
 ---
-{ catalog: { title: "tools", labels: ["steel", "wood"] } } mapLeafValues (value, path) ->
+{ inventory: { title: "tools", labels: ["steel", "wood"] } } mapLeafValues (value, path) ->
   if (value is String) upper(value) else value
 ```
 
 ```json
 {
-  "catalog": {
+  "inventory": {
     "title": "TOOLS",
     "labels": [
       "STEEL",
@@ -284,6 +284,52 @@ output application/json
   "hex": "54696465",
   "base64": "VGlkZQ==",
   "literalHex": "54696465"
+}
+```
+
+## Extension module
+
+`dw::extra::Common` adds general-purpose helpers that are outside the DataWeave compatibility
+surface. Import it explicitly; its names do not replace the core modules.
+
+```text
+%dw 2.0
+import * from dw::extra::Common
+output application/json
+---
+{
+  chunks: chunk(range(1, 8), 3),
+  picked: pick({code: "g-17", count: 4, note: null}, ["code", "count"]),
+  fixed: toFixed(2.345, 2),
+  titled: title("quiet HARBOR"),
+  piped: pipe([(n) -> n + 2, (n) -> n * 3])(4)
+}
+```
+
+```json
+{
+  "chunks": [
+    [
+      1,
+      2,
+      3
+    ],
+    [
+      4,
+      5,
+      6
+    ],
+    [
+      7
+    ]
+  ],
+  "picked": {
+    "code": "g-17",
+    "count": 4
+  },
+  "fixed": "2.35",
+  "titled": "Quiet Harbor",
+  "piped": 18
 }
 ```
 
@@ -379,6 +425,12 @@ output application/json
 ### dw::util::Diff
 
 `diff`
+
+### dw::extra::Common
+
+`enumerate`, `range`, `sorted`, `reversed`, `chunk`, `compact`, `unique`, `fromEntries`, `assign`,
+`pick`, `omit`, `hasOwn`, `parseInt`, `parseFloat`, `toFixed`, `clamp`, `trunc`, `sign`, `title`,
+`lstrip`, `rstrip`, `zfill`, `partition`, `rpartition`, `identity`, `pipe`, `compose`
 
 ## Error handling
 

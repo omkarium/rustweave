@@ -2182,8 +2182,8 @@ mod tests {
         let index_names: BTreeSet<&'static str> = index.iter().map(|(_, name)| *name).collect();
         assert_eq!(runtime, index_names);
 
-        // Aliases exposed by public modules must resolve to a index entry.
-        for module in ["dw::core::Binaries", "dw::core::Types"] {
+        // Aliases exposed by public modules must resolve to an index entry.
+        for module in ["dw::core::Binaries", "dw::core::Types", "dw::extra::Common"] {
             for (local, _) in crate::stdlib::module_aliases(module) {
                 assert!(
                     index.contains(&(module, *local)),

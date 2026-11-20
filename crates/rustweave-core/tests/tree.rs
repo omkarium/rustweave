@@ -162,16 +162,16 @@ output application/json
     (
         r####"%dw 2.0
 import * from dw::util::Tree
-var catalog = {shelf: [{name: "Tea", code: "T-1", tags: [{name: "green"}, {name: "loose"}]}, {name: "Rope", code: "R-2", tags: [{name: "nylon"}, {name: "braid"}]}]}
+var inventory = {shelf: [{name: "Tea", code: "T-1", tags: [{name: "green"}, {name: "loose"}]}, {name: "Rope", code: "R-2", tags: [{name: "nylon"}, {name: "braid"}]}]}
 output application/json
 ---
 {
-  tea: catalog nodeExists ((value, path) -> path[-1].selector == "name" and value == "Tea"),
-  green: catalog nodeExists ((value, path) -> path[-1].selector == "name" and value == "green"),
-  loose: catalog nodeExists ($$[-1].selector == "name" and $ == "loose"),
-  braid: catalog nodeExists ($$[-1].selector == "name" and $ == "braid"),
-  wrongField: catalog nodeExists ($$[-1].selector == "brand"),
-  coffee: catalog nodeExists ($$[-1].selector == "name" and $ == "Coffee")
+  tea: inventory nodeExists ((value, path) -> path[-1].selector == "name" and value == "Tea"),
+  green: inventory nodeExists ((value, path) -> path[-1].selector == "name" and value == "green"),
+  loose: inventory nodeExists ($$[-1].selector == "name" and $ == "loose"),
+  braid: inventory nodeExists ($$[-1].selector == "name" and $ == "braid"),
+  wrongField: inventory nodeExists ($$[-1].selector == "brand"),
+  coffee: inventory nodeExists ($$[-1].selector == "name" and $ == "Coffee")
 }"####,
         r####"{
   "tea": true,
