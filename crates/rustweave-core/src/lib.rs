@@ -101,7 +101,7 @@
 //! assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 //! ```
 //!
-//! # Supported function catalog
+//! # Supported function index
 //!
 //! [`functions::Function`] describes one supported function with its exact DataWeave name,
 //! namespace, and a short description. The complete list is [`functions::Function::ALL`].
@@ -220,7 +220,9 @@ impl Interp {
     pub fn eval(&self, script: &str, inputs: &[(&str, &str)]) -> Result<Value, DwError> {
         let parsed = parser::parse_script(script)?;
         let mut env = self.globals.clone();
-        for module in &parsed.imports {
+        let mut modules: Vec<&str> = parsed.imports.iter().map(String::as_str).collect();
+        modules.sort_by_key(|module| usize::from(*module != "dw::extra::Common"));
+        for module in modules {
             for (local, builtin) in stdlib::module_aliases(module) {
                 env = env.extend(*local, RValue::Builtin(builtin));
             }

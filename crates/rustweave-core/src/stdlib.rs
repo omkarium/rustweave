@@ -312,6 +312,11 @@ const NAMES: &[&str] = &[
     "clamp",
     "trunc",
     "sign",
+    "title",
+    "lstrip",
+    "rstrip",
+    "zfill",
+    "rpartition",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -329,6 +334,7 @@ pub fn builtin_name(name: &str) -> Option<&'static str> {
 pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
     match module {
         "dw::core::Binaries" => &[("fromHex", "binariesFromHex"), ("toHex", "binariesToHex")],
+        "dw::core::Arrays" => &[("partition", "partition")],
         "dw::core::Types" => &[
             ("isArrayType", "typesIsArrayType"),
             ("isObjectType", "typesIsObjectType"),
@@ -352,6 +358,12 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("clamp", "clamp"),
             ("trunc", "trunc"),
             ("sign", "sign"),
+            ("title", "title"),
+            ("lstrip", "lstrip"),
+            ("rstrip", "rstrip"),
+            ("zfill", "zfill"),
+            ("partition", "extraPartition"),
+            ("rpartition", "rpartition"),
         ],
         _ => &[],
     }
@@ -600,6 +612,12 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "clamp" => extra_clamp(args),
         "trunc" => extra_trunc(args),
         "sign" => extra_sign(args),
+        "title" => extra_title(args),
+        "lstrip" => extra_strip(args, true),
+        "rstrip" => extra_strip(args, false),
+        "zfill" => extra_zfill(args),
+        "extraPartition" => extra_partition(args, false),
+        "rpartition" => extra_partition(args, true),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -5016,6 +5034,98 @@ fn extra_sign(args: &[RValue]) -> Result<Value, DwError> {
         1
     };
     Ok(Value::Number(Number::from_i64(sign)))
+}
+
+fn extra_title(args: &[RValue]) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let mut out = String::new();
+    let mut word_start = true;
+    for character in text.chars() {
+        if character.is_alphabetic() {
+            if word_start {
+                out.extend(character.to_uppercase());
+            } else {
+                out.extend(character.to_lowercase());
+            }
+            word_start = false;
+        } else {
+            out.push(character);
+            word_start = true;
+        }
+    }
+    Ok(Value::String(out))
+}
+
+fn extra_strip(args: &[RValue], leading: bool) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let chars = match args.get(1) {
+        None => None,
+        Some(RValue::Val(Value::Null)) => None,
+        Some(RValue::Val(Value::String(chars))) => Some(chars.clone()),
+        Some(_) => return Err(DwError::new("strip characters must be a String or null")),
+    };
+    let stripped = match chars {
+        None if leading => text.trim_start().to_string(),
+        None => text.trim_end().to_string(),
+        Some(chars) if leading => text
+            .trim_start_matches(|character| chars.contains(character))
+            .to_string(),
+        Some(chars) => text
+            .trim_end_matches(|character| chars.contains(character))
+            .to_string(),
+    };
+    Ok(Value::String(stripped))
+}
+
+fn extra_zfill(args: &[RValue]) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let width = integer(args, 1)?;
+    if width < 0 {
+        return Err(DwError::new("zfill width must not be negative"));
+    }
+    let width = width as usize;
+    let length = text.chars().count();
+    if length >= width {
+        return Ok(Value::String(text));
+    }
+    let zeros = "0".repeat(width - length);
+    let mut chars = text.chars();
+    let output = match chars.next() {
+        Some(sign @ ('+' | '-')) => format!("{sign}{zeros}{}", chars.as_str()),
+        _ => format!("{zeros}{text}"),
+    };
+    Ok(Value::String(output))
+}
+
+fn extra_partition(args: &[RValue], last: bool) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let separator = string(args, 1)?;
+    if separator.is_empty() {
+        return Err(DwError::new("partition separator must not be empty"));
+    }
+    let position = if last {
+        text.rfind(&separator)
+    } else {
+        text.find(&separator)
+    };
+    let parts = match position {
+        Some(index) => vec![
+            Value::String(text[..index].to_string()),
+            Value::String(separator.clone()),
+            Value::String(text[index + separator.len()..].to_string()),
+        ],
+        None if last => vec![
+            Value::String(String::new()),
+            Value::String(String::new()),
+            Value::String(text),
+        ],
+        None => vec![
+            Value::String(text),
+            Value::String(String::new()),
+            Value::String(String::new()),
+        ],
+    };
+    Ok(Value::Array(parts))
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {

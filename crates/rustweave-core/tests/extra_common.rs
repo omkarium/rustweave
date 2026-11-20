@@ -4,6 +4,7 @@
 mod arrays;
 mod numbers;
 mod objects;
+mod strings;
 
 fn run(script: &str) -> String {
     rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))

@@ -1783,6 +1783,42 @@ impl Function {
         "Returns negative one, zero, or one."
     );
     index_function!(
+        EXTRA_COMMON_TITLE,
+        "dw::extra::Common",
+        "title",
+        "Capitalizes each word and lowercases the remaining letters."
+    );
+    index_function!(
+        EXTRA_COMMON_LSTRIP,
+        "dw::extra::Common",
+        "lstrip",
+        "Removes leading whitespace or selected characters."
+    );
+    index_function!(
+        EXTRA_COMMON_RSTRIP,
+        "dw::extra::Common",
+        "rstrip",
+        "Removes trailing whitespace or selected characters."
+    );
+    index_function!(
+        EXTRA_COMMON_ZFILL,
+        "dw::extra::Common",
+        "zfill",
+        "Pads text with leading zeros to a requested width."
+    );
+    index_function!(
+        EXTRA_COMMON_PARTITION,
+        "dw::extra::Common",
+        "partition",
+        "Splits text at its first separator occurrence."
+    );
+    index_function!(
+        EXTRA_COMMON_RPARTITION,
+        "dw::extra::Common",
+        "rpartition",
+        "Splits text at its last separator occurrence."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2088,6 +2124,12 @@ impl Function {
         Self::EXTRA_COMMON_CLAMP,
         Self::EXTRA_COMMON_TRUNC,
         Self::EXTRA_COMMON_SIGN,
+        Self::EXTRA_COMMON_TITLE,
+        Self::EXTRA_COMMON_LSTRIP,
+        Self::EXTRA_COMMON_RSTRIP,
+        Self::EXTRA_COMMON_ZFILL,
+        Self::EXTRA_COMMON_PARTITION,
+        Self::EXTRA_COMMON_RPARTITION,
         Self::DIFF_DIFF,
     ];
 }
