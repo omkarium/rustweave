@@ -125,16 +125,6 @@ fn csv_errors() {
 }
 
 #[test]
-fn unknown_mime_errors() {
-    for script in [
-        r####"read("x", "application/nope")"####,
-        r####"write({a: 1}, "application/nope")"####,
-    ] {
-        assert!(run_result(script).is_err(), "expected error: {script}");
-    }
-}
-
-#[test]
 fn xml_read_mapping() {
     let script = r####"%dw 2.0
 output application/json
@@ -214,6 +204,76 @@ fn xml_errors() {
 }
 
 #[test]
+fn yaml_read_documents() {
+    let script = r####"%dw 2.0
+output application/json
+---
+read("base: &base\n  code: G-17\n  count: 4\ncopy: *base\nitems:\n  - calm\n  - sea\nnote: |\n  line one\n  line two\n---\nsecond: true\n", "application/yaml")"####;
+    let expected = r####"[
+  {
+    "base": {
+      "code": "G-17",
+      "count": 4
+    },
+    "copy": {
+      "code": "G-17",
+      "count": 4
+    },
+    "items": [
+      "calm",
+      "sea"
+    ],
+    "note": "line one\nline two\n"
+  },
+  {
+    "second": true
+  }
+]"####;
+    assert_eq!(run(script), expected);
+}
+
+#[test]
+fn yaml_write_and_output() {
+    let script = r####"%dw 2.0
+output application/json
+---
+write({ship: {name: "Kite", tags: ["calm", "sea"], note: "line one\nline two"}, empty: null, active: true, count: 4, label: "true"}, "application/yaml")"####;
+    let expected = json_text(
+        "ship:\n  name: Kite\n  tags:\n    - calm\n    - sea\n  note: |-\n    line one\n    line two\nempty: null\nactive: true\ncount: 4\nlabel: \"true\"\n",
+    );
+    assert_eq!(run(script), expected);
+
+    let script = r####"%dw 2.0
+output application/yaml indent=4, writeDocumentStart=true
+---
+{ship: {name: "Kite", tags: ["calm", "sea"]}, empty: null}"####;
+    let expected =
+        "---\nship:\n    name: Kite\n    tags:\n        - calm\n        - sea\nempty: null\n";
+    assert_eq!(run(script), expected);
+}
+
+#[test]
+fn yaml_errors() {
+    for script in [
+        r####"read("a: [1, 2", "application/yaml")"####,
+        r####"read("? [a, b]\n: value\n", "application/yaml")"####,
+        r####"read("a: 1", "application/yaml", {encoding: "latin1"})"####,
+    ] {
+        assert!(run_result(script).is_err(), "expected error: {script}");
+    }
+}
+
+#[test]
+fn unknown_mime_errors() {
+    for script in [
+        r####"read("x", "application/nope")"####,
+        r####"write({a: 1}, "application/nope")"####,
+    ] {
+        assert!(run_result(script).is_err(), "expected error: {script}");
+    }
+}
+
+#[test]
 fn read_url_uses_extension() {
     let base = std::env::temp_dir();
     let id = std::process::id();
@@ -231,6 +291,11 @@ fn read_url_uses_extension() {
         (
             format!("rustweave-{id}-records.xml"),
             "<ship><name>Kite</name></ship>",
+            "{\n  \"ship\": {\n    \"name\": \"Kite\"\n  }\n}",
+        ),
+        (
+            format!("rustweave-{id}-records.yaml"),
+            "ship:\n  name: Kite\n",
             "{\n  \"ship\": {\n    \"name\": \"Kite\"\n  }\n}",
         ),
         (
