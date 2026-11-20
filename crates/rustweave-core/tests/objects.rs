@@ -1,30 +1,32 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Behaviour tests for the Objects module.
 
-mod common;
+fn run(script: &str) -> String {
+    rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))
+}
 
 const CASES: &[(&str, &str)] = &[
     (
-        r####"{ a: 1, b: 2 } pluck $$"####,
+        r####"{ alpha: 10, beta: 20 } pluck $$"####,
         r####"[
-  "a",
-  "b"
+  "alpha",
+  "beta"
 ]"####,
     ),
     (
-        r####"{ a: 1, b: 2 } mapObject { ($$): $ * 2 }"####,
+        r####"{ alpha: 10, beta: 20 } mapObject { ($$): $ + 5 }"####,
         r####"{
-  "a": 2,
-  "b": 4
+  "alpha": 15,
+  "beta": 25
 }"####,
     ),
-    (r####"sizeOf({ a: 1, b: 2 })"####, r####"2"####),
+    (r####"sizeOf({ x: 1, y: 2, z: 3 })"####, r####"3"####),
     (
-        r####"entriesOf({ a: 1 })"####,
+        r####"entriesOf({ color: "teal" })"####,
         r####"[
   {
-    "key": "a",
-    "value": 1,
+    "key": "color",
+    "value": "teal",
     "attributes": {
       
     }
@@ -36,35 +38,35 @@ const CASES: &[(&str, &str)] = &[
 import * from dw::core::Objects
 output application/json
 ---
-     { keys: keySet({ b: 1, a: 2 }), every: { a: 1, b: 2 } everyEntry ($ > 0),        some: { a: 1, b: 3 } someEntry ($ == 3),        remove: { a: 1, b: 2, c: 3 } -- ["b"],        merge: mergeWith({ a: 1, b: 2 }, { b: 3, c: 4 }),        div: divideBy({ a: 1, b: 2, c: 3 }, 2),        take: { a: 1, b: 2, c: 3 } takeWhile $ < 3 }"####,
+{ keys: keySet({ z: 8, y: 9 }), every: { x: 4, y: 5 } everyEntry ($ > 0), some: { x: 4, y: 8 } someEntry ($ == 8), remove: { x: 4, y: 5, z: 6 } -- ["y"], merge: mergeWith({ x: 4, y: 5 }, { y: 9, z: 10 }), div: divideBy({ x: 4, y: 5, z: 6 }, 2), take: { x: 4, y: 5, z: 6 } takeWhile $ < 6 }"####,
         r####"{
   "keys": [
-    "b",
-    "a"
+    "z",
+    "y"
   ],
   "every": true,
   "some": true,
   "remove": {
-    "a": 1,
-    "c": 3
+    "x": 4,
+    "z": 6
   },
   "merge": {
-    "a": 1,
-    "b": 3,
-    "c": 4
+    "x": 4,
+    "y": 9,
+    "z": 10
   },
   "div": [
     {
-      "a": 1,
-      "b": 2
+      "x": 4,
+      "y": 5
     },
     {
-      "c": 3
+      "z": 6
     }
   ],
   "take": {
-    "a": 1,
-    "b": 2
+    "x": 4,
+    "y": 5
   }
 }"####,
     ),
@@ -73,12 +75,12 @@ output application/json
 import * from dw::core::Objects
 output application/json
 ---
-{ es: entrySet({a:1}), names: nameSet({a:1}), vals: valueSet({a:1}), ee: ({a:1,b:2} everyEntry ($ > 0)), se: ({a:1,b:2} someEntry ($ == 2)), mw: mergeWith({a:1,b:2},{b:3,c:4}), div: divideBy({a:1,b:2,c:3},2), tw: ({a:1,b:2,c:3} takeWhile ($ < 3)) }"####,
+{ es: entrySet({a: 11}), names: nameSet({a: 11}), vals: valueSet({a: 11}), ee: ({a: 11, b: 12} everyEntry ($ > 10)), se: ({a: 11, b: 12} someEntry ($ == 12)), mw: mergeWith({a: 11, b: 12}, {b: 13, c: 14}), div: divideBy({a: 11, b: 12, c: 13}, 2), tw: ({a: 11, b: 12, c: 13} takeWhile ($ < 13)) }"####,
         r####"{
   "es": [
     {
       "key": "a",
-      "value": 1,
+      "value": 11,
       "attributes": {
         
       }
@@ -88,27 +90,27 @@ output application/json
     "a"
   ],
   "vals": [
-    1
+    11
   ],
   "ee": true,
   "se": true,
   "mw": {
-    "a": 1,
-    "b": 3,
-    "c": 4
+    "a": 11,
+    "b": 13,
+    "c": 14
   },
   "div": [
     {
-      "a": 1,
-      "b": 2
+      "a": 11,
+      "b": 12
     },
     {
-      "c": 3
+      "c": 13
     }
   ],
   "tw": {
-    "a": 1,
-    "b": 2
+    "a": 11,
+    "b": 12
   }
 }"####,
     ),
@@ -117,6 +119,6 @@ output application/json
 #[test]
 fn behaviour_cases() {
     for (script, expected) in CASES {
-        assert_eq!(common::run(script), *expected, "script: {script}");
+        assert_eq!(run(script), *expected, "script: {script}");
     }
 }

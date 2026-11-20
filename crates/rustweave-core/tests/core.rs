@@ -1,68 +1,79 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Behaviour tests for Core.
 
-mod common;
+const SAMPLES: &str = r####"{
+  "events": [
+    { "seq": 10, "site": "ridge", "celsius": 21.5, "ok": true },
+    { "seq": 11, "site": "delta", "celsius": 18, "ok": false },
+    { "seq": 12, "site": "ridge", "celsius": 3.25, "ok": true },
+    { "seq": 13, "site": "harbor", "celsius": 42.75, "ok": true }
+  ],
+  "blank": [],
+  "absent": null
+}"####;
+
+fn run(script: &str) -> String {
+    rustweave_core::run(script, &[("samples", SAMPLES)]).unwrap_or_else(|error| panic!("{error}"))
+}
 
 const CASES: &[(&str, &str)] = &[
     (
-        r####"payload.orders map $.id"####,
+        r####"samples.events map $.seq"####,
         r####"[
-  1,
-  2,
-  3,
-  4
+  10,
+  11,
+  12,
+  13
 ]"####,
     ),
     (
-        r####"payload.orders map (o, i) -> { n: i, who: o.customer }"####,
+        r####"samples.events map (e, i) -> { position: i, site: e.site }"####,
         r####"[
   {
-    "n": 0,
-    "who": "ana"
+    "position": 0,
+    "site": "ridge"
   },
   {
-    "n": 1,
-    "who": "ben"
+    "position": 1,
+    "site": "delta"
   },
   {
-    "n": 2,
-    "who": "ana"
+    "position": 2,
+    "site": "ridge"
   },
   {
-    "n": 3,
-    "who": "cara"
+    "position": 3,
+    "site": "harbor"
   }
 ]"####,
     ),
     (
-        r####"payload.orders filter $.paid map $.customer"####,
+        r####"samples.events filter $.ok map $.site"####,
         r####"[
-  "ana",
-  "ana",
-  "cara"
+  "ridge",
+  "ridge",
+  "harbor"
 ]"####,
     ),
     (
-        r####"payload.orders filter (o) -> o.total > 100"####,
+        r####"samples.events filter (e) -> e.celsius > 20"####,
         r####"[
   {
-    "id": 1,
-    "customer": "ana",
-    "region": "north",
-    "total": 120.5,
-    "paid": true
+    "seq": 10,
+    "site": "ridge",
+    "celsius": 21.5,
+    "ok": true
   },
   {
-    "id": 4,
-    "customer": "cara",
-    "region": "east",
-    "total": 300.1,
-    "paid": true
+    "seq": 13,
+    "site": "harbor",
+    "celsius": 42.75,
+    "ok": true
   }
 ]"####,
     ),
     (
-        r####"{ a: sizeOf(payload.orders), b: sizeOf(payload.empty), c: sizeOf(payload.nothing) }"####,
+        r####"{ a: sizeOf(samples.events), b: sizeOf(samples.blank), c: sizeOf(samples.absent) }"####,
         r####"{
   "a": 4,
   "b": 0,
@@ -70,243 +81,235 @@ const CASES: &[(&str, &str)] = &[
 }"####,
     ),
     (
-        r####"{ a: isEmpty(payload.orders), b: isEmpty(payload.empty), c: isEmpty(payload.nothing) }"####,
+        r####"{ a: isEmpty(samples.events), b: isEmpty(samples.blank), c: isEmpty(samples.absent) }"####,
         r####"{
   "a": false,
   "b": true,
   "c": true
 }"####,
     ),
-    (r####"payload.nothing map $"####, r####"null"####),
+    (r####"samples.absent map $"####, r####"null"####),
     (
-        r####"payload.orders.total reduce (t, acc) -> t + acc"####,
-        r####"515.85"####,
+        r####"samples.events.celsius reduce (t, acc) -> t + acc"####,
+        r####"85.5"####,
     ),
     (
-        r####"payload.orders.total reduce (t, acc = 100) -> t + acc"####,
-        r####"615.85"####,
+        r####"samples.events.celsius reduce (t, acc = 50) -> t + acc"####,
+        r####"135.5"####,
     ),
-    (r####"[1, 2, 3, 4] reduce ($ + $$)"####, r####"10"####),
+    (r####"[4, 8, 15, 16] reduce ($ + $$)"####, r####"43"####),
     (
-        r####"payload.orders reduce (o, acc = []) -> acc ++ [o.customer]"####,
+        r####"samples.events reduce (e, acc = []) -> acc ++ [e.site]"####,
         r####"[
-  "ana",
-  "ben",
-  "ana",
-  "cara"
+  "ridge",
+  "delta",
+  "ridge",
+  "harbor"
 ]"####,
     ),
-    (r####"payload.empty reduce ($ + $$)"####, r####"null"####),
-    (r####"payload.nothing reduce ($ + $$)"####, r####"null"####),
-    (r####"sum(payload.orders.total)"####, r####"515.85"####),
+    (r####"samples.blank reduce ($ + $$)"####, r####"null"####),
+    (r####"samples.absent reduce ($ + $$)"####, r####"null"####),
+    (r####"sum(samples.events.celsius)"####, r####"85.5"####),
     (r####"sum([])"####, r####"0"####),
     (
-        r####"payload.orders groupBy $.region"####,
+        r####"samples.events groupBy $.site"####,
         r####"{
-  "north": [
+  "ridge": [
     {
-      "id": 1,
-      "customer": "ana",
-      "region": "north",
-      "total": 120.5,
-      "paid": true
+      "seq": 10,
+      "site": "ridge",
+      "celsius": 21.5,
+      "ok": true
     },
     {
-      "id": 3,
-      "customer": "ana",
-      "region": "north",
-      "total": 15.25,
-      "paid": true
+      "seq": 12,
+      "site": "ridge",
+      "celsius": 3.25,
+      "ok": true
     }
   ],
-  "south": [
+  "delta": [
     {
-      "id": 2,
-      "customer": "ben",
-      "region": "south",
-      "total": 80,
-      "paid": false
+      "seq": 11,
+      "site": "delta",
+      "celsius": 18,
+      "ok": false
     }
   ],
-  "east": [
+  "harbor": [
     {
-      "id": 4,
-      "customer": "cara",
-      "region": "east",
-      "total": 300.1,
-      "paid": true
+      "seq": 13,
+      "site": "harbor",
+      "celsius": 42.75,
+      "ok": true
     }
   ]
 }"####,
     ),
     (
-        r####"payload.orders groupBy (o, i) -> o.paid"####,
+        r####"samples.events groupBy (e, i) -> e.ok"####,
         r####"{
   "true": [
     {
-      "id": 1,
-      "customer": "ana",
-      "region": "north",
-      "total": 120.5,
-      "paid": true
+      "seq": 10,
+      "site": "ridge",
+      "celsius": 21.5,
+      "ok": true
     },
     {
-      "id": 3,
-      "customer": "ana",
-      "region": "north",
-      "total": 15.25,
-      "paid": true
+      "seq": 12,
+      "site": "ridge",
+      "celsius": 3.25,
+      "ok": true
     },
     {
-      "id": 4,
-      "customer": "cara",
-      "region": "east",
-      "total": 300.1,
-      "paid": true
+      "seq": 13,
+      "site": "harbor",
+      "celsius": 42.75,
+      "ok": true
     }
   ],
   "false": [
     {
-      "id": 2,
-      "customer": "ben",
-      "region": "south",
-      "total": 80,
-      "paid": false
+      "seq": 11,
+      "site": "delta",
+      "celsius": 18,
+      "ok": false
     }
   ]
 }"####,
     ),
     (
-        r####"[1, 1.0, 2, 2.50] groupBy $"####,
+        r####"[3, 3.0, 5, 5.50] groupBy $"####,
         r####"{
-  "1": [
-    1,
-    1
+  "3": [
+    3,
+    3
   ],
-  "2": [
-    2
+  "5": [
+    5
   ],
-  "2.5": [
-    2.5
+  "5.5": [
+    5.5
   ]
 }"####,
     ),
     (
-        r####"(payload.orders groupBy $.customer).ana.id"####,
+        r####"(samples.events groupBy $.site).ridge.seq"####,
+        r####"[
+  10,
+  12
+]"####,
+    ),
+    (
+        r####"flatten([[5, 6], [7], 8])"####,
+        r####"[
+  5,
+  6,
+  7,
+  8
+]"####,
+    ),
+    (
+        r####"[5, 6, 6, 7] distinctBy $"####,
+        r####"[
+  5,
+  6,
+  7
+]"####,
+    ),
+    (
+        r####"[7, 5, 6] orderBy $"####,
+        r####"[
+  5,
+  6,
+  7
+]"####,
+    ),
+    (
+        r####"[5, 6, 7, 6] find 6"####,
         r####"[
   1,
   3
 ]"####,
     ),
+    (r####"[5, 6, 7] contains 6"####, r####"true"####),
+    (r####"["x", "y"] joinBy "-""####, r####""x-y""####),
+    (r####"5 then ($ + 10)"####, r####"15"####),
+    (r####"null then ($ + 1)"####, r####"null"####),
     (
-        r####"flatten([[1, 2], [3], 4])"####,
+        r####"[3, 4] flatMap (n) -> [n, n]"####,
         r####"[
-  1,
-  2,
   3,
+  3,
+  4,
   4
 ]"####,
     ),
     (
-        r####"[1, 2, 2, 3] distinctBy $"####,
-        r####"[
-  1,
-  2,
-  3
-]"####,
-    ),
-    (
-        r####"[3, 1, 2] orderBy $"####,
-        r####"[
-  1,
-  2,
-  3
-]"####,
-    ),
-    (
-        r####"[1, 2, 3, 2] find 2"####,
-        r####"[
-  1,
-  3
-]"####,
-    ),
-    (r####"[1, 2, 3] contains 2"####, r####"true"####),
-    (r####"["a", "b"] joinBy ",""####, r####""a,b""####),
-    (r####"1 then ($ + 10)"####, r####"11"####),
-    (r####"null then ($ + 1)"####, r####"null"####),
-    (
-        r####"[1, 2] flatMap (n) -> [n, n]"####,
-        r####"[
-  1,
-  1,
-  2,
-  2
-]"####,
-    ),
-    (
-        r####"zip([1, 2], ["a", "b"])"####,
+        r####"zip([5, 6], ["p", "q"])"####,
         r####"[
   [
-    1,
-    "a"
+    5,
+    "p"
   ],
   [
-    2,
-    "b"
+    6,
+    "q"
   ]
 ]"####,
     ),
-    (r####"[1, 2, 1] indexOf 1"####, r####"0"####),
-    (r####"[1, 2, 1] lastIndexOf 1"####, r####"2"####),
+    (r####"[7, 8, 7] indexOf 7"####, r####"0"####),
+    (r####"[7, 8, 7] lastIndexOf 7"####, r####"2"####),
     (
-        r####"{ u: unzip([[1, 2, 3], [4, 5, 6]]), n: [null onNull () -> "was null", "x" onNull () -> "was null"] }"####,
+        r####"{ u: unzip([[10, 20, 30], [40, 50, 60]]), n: [null onNull () -> "none", "y" onNull () -> "none"] }"####,
         r####"{
   "u": [
     [
-      1,
-      4
+      10,
+      40
     ],
     [
-      2,
-      5
+      20,
+      50
     ],
     [
-      3,
-      6
+      30,
+      60
     ]
   ],
   "n": [
-    "was null",
-    "x"
+    "none",
+    "y"
   ]
 }"####,
     ),
     (
         r####"output application/json
 ---
-{ s: sizeOf("abc"), o: sizeOf({a:1,b:2}), n: sizeOf(123), es: isEmpty(""), eo: isEmpty({}), io: indexOf("abcabc","bc"), lio: lastIndexOf("abcabc","bc"), then: 5 then ($+1), on: null onNull () -> "x", blank: [isBlank(null), isBlank("  "), isBlank("x")], minBy: [{n:2},{n:1}] minBy $.n, maxBy: [{n:2},{n:1}] maxBy $.n, avg: avg([1,2,3]) }"####,
+{ s: sizeOf("abcd"), o: sizeOf({x: 1, y: 2, z: 3}), n: sizeOf(456), es: isEmpty(""), eo: isEmpty({}), io: indexOf("abracadabra", "cad"), lio: lastIndexOf("abracadabra", "ab"), then: 7 then ($ * 2), on: null onNull () -> "fallback", blank: [isBlank(null), isBlank("  "), isBlank("x")], minBy: [{v: 9}, {v: 4}] minBy $.v, maxBy: [{v: 9}, {v: 4}] maxBy $.v, avg: avg([2, 4, 6, 8]) }"####,
         r####"{
-  "s": 3,
-  "o": 2,
+  "s": 4,
+  "o": 3,
   "n": 3,
   "es": true,
   "eo": true,
-  "io": 1,
-  "lio": 4,
-  "then": 6,
-  "on": "x",
+  "io": 4,
+  "lio": 7,
+  "then": 14,
+  "on": "fallback",
   "blank": [
     true,
     true,
     false
   ],
   "minBy": {
-    "n": 1
+    "v": 4
   },
   "maxBy": {
-    "n": 2
+    "v": 9
   },
-  "avg": 2
+  "avg": 5
 }"####,
     ),
 ];
@@ -314,6 +317,6 @@ const CASES: &[(&str, &str)] = &[
 #[test]
 fn behaviour_cases() {
     for (script, expected) in CASES {
-        assert_eq!(common::run(script), *expected, "script: {script}");
+        assert_eq!(run(script), *expected, "script: {script}");
     }
 }

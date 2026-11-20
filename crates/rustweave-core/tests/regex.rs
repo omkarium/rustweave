@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Behaviour tests for regular expressions.
 
-mod common;
+fn run(script: &str) -> String {
+    rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))
+}
 
 const CASES: &[(&str, &str)] = &[
     (
@@ -9,11 +11,22 @@ const CASES: &[(&str, &str)] = &[
 import * from dw::core::Strings
 output application/json
 ---
-     { split: "a1b2" splitBy /[0-9]/, find: "a1b22" find /([0-9])([0-9]?)/,        scan: "ab" scan /(a)(x)?(b)/, match: "a1b2" match /([a-z])([0-9])/,        matches: ["Aa" matches /a/, "a1" matches /[a-z][0-9]/],        contains: ["a1b2" contains /[0-9]/, "abc" contains /[0-9]/],        replaceStr: "a1b2" replace /[0-9]/ with "X",        replaceFn: "a1b2" replace /([a-z])([0-9])/ with (m, i) -> m[2] ++ m[1],        replaceIdx: "a1b2" replace /[0-9]/ with (m, i) -> i,        count: "hello, ciao!" countMatches /[aeiou]/ }"####,
+{
+  split: "x7y8" splitBy /[0-9]/,
+  find: "x7y88" find /([0-9])([0-9]?)/,
+  scan: "cd" scan /(c)(z)?(d)/,
+  match: "x7y8" match /([a-z])([0-9])/,
+  matches: ["Bb" matches /b/, "b7" matches /[a-z][0-9]/],
+  contains: ["x7y8" contains /[0-9]/, "xyz" contains /[0-9]/],
+  replaceStr: "x7y8" replace /[0-9]/ with "Z",
+  replaceFn: "x7y8" replace /([a-z])([0-9])/ with (m, i) -> m[2] ++ m[1],
+  replaceIdx: "x7y8" replace /[0-9]/ with (m, i) -> i,
+  count: "rhythm, sync!" countMatches /[aeiou]/
+}"####,
         r####"{
   "split": [
-    "a",
-    "b"
+    "x",
+    "y"
   ],
   "find": [
     [
@@ -29,10 +42,10 @@ output application/json
   ],
   "scan": [
     [
-      "ab",
-      "a",
+      "cd",
+      "c",
       null,
-      "b"
+      "d"
     ]
   ],
   "match": [
@@ -46,10 +59,10 @@ output application/json
     true,
     false
   ],
-  "replaceStr": "aXbX",
-  "replaceFn": "1a2b",
-  "replaceIdx": "a0b1",
-  "count": 5
+  "replaceStr": "xZyZ",
+  "replaceFn": "7x8y",
+  "replaceIdx": "x0y1",
+  "count": 0
 }"####,
     ),
     (
@@ -57,10 +70,19 @@ output application/json
 import * from dw::core::Strings
 output application/json
 ---
-     { trailing: "a1" splitBy /[0-9]/, emptyText: "" splitBy /x/,        noMatch: "abc" find /x/, unicode: "é1" find /[0-9]/, div: 10/2,        words: words("  one\ntwo\tthree  "), lines: lines("a\r\nb\rc\nd"),        scanNull: "ab" scan /(a)(x)?(b)/ }"####,
+{
+  trailing: "x7" splitBy /[0-9]/,
+  emptyText: "" splitBy /z/,
+  noMatch: "xyz" find /q/,
+  unicode: "é7" find /[0-9]/,
+  div: 12/3,
+  words: words("  red\ngreen\tblue  "),
+  lines: lines("n\r\ns\rn\nl"),
+  scanNull: "cd" scan /(c)(z)?(d)/
+}"####,
         r####"{
   "trailing": [
-    "a"
+    "x"
   ],
   "emptyText": [
     ""
@@ -73,24 +95,24 @@ output application/json
       1
     ]
   ],
-  "div": 5,
+  "div": 4,
   "words": [
-    "one",
-    "two",
-    "three"
+    "red",
+    "green",
+    "blue"
   ],
   "lines": [
-    "a",
-    "b",
-    "c",
-    "d"
+    "n",
+    "s",
+    "n",
+    "l"
   ],
   "scanNull": [
     [
-      "ab",
-      "a",
+      "cd",
+      "c",
       null,
-      "b"
+      "d"
     ]
   ]
 }"####,
@@ -100,6 +122,6 @@ output application/json
 #[test]
 fn behaviour_cases() {
     for (script, expected) in CASES {
-        assert_eq!(common::run(script), *expected, "script: {script}");
+        assert_eq!(run(script), *expected, "script: {script}");
     }
 }

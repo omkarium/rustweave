@@ -1,52 +1,62 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Behaviour tests for the Strings module.
 
-mod common;
+fn run(script: &str) -> String {
+    rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))
+}
 
 const CASES: &[(&str, &str)] = &[
     (
-        r####""abba" find "b""####,
+        r####""banana" find "na""####,
         r####"[
-  1,
+  2,
+  4
+]"####,
+    ),
+    (
+        r####""aaaa" find "aa""####,
+        r####"[
+  0,
   2
 ]"####,
     ),
     (
-        r####""aaa" find "aa""####,
-        r####"[
-  0
-]"####,
+        r####""pepper" replace "p" with "P""####,
+        r####""PePPer""####,
     ),
-    (r####""hello" replace "l" with "L""####, r####""heLLo""####),
     (
-        r####""hell" splitBy "l""####,
+        r####""mango" splitBy "n""####,
         r####"[
-  "he"
+  "ma",
+  "go"
 ]"####,
     ),
-    (r####"upper("Ab") ++ lower("Cd")"####, r####""ABcd""####),
-    (r####"trim("  x  ")"####, r####""x""####),
-    (r####""hi" startsWith "h""####, r####"true"####),
-    (r####"sizeOf("ab")"####, r####"2"####),
-    (r####"isBlank("  ")"####, r####"true"####),
+    (
+        r####"upper("Kiwi") ++ lower("PLUM")"####,
+        r####""KIWIplum""####,
+    ),
+    (r####"trim("  lime  ")"####, r####""lime""####),
+    (r####""harbor" startsWith "har""####, r####"true"####),
+    (r####"sizeOf("peach")"####, r####"5"####),
+    (r####"isBlank("\t ")"####, r####"true"####),
     (
         r####"%dw 2.0
 import * from dw::core::Strings
 output application/json
 ---
-     { cap: capitalize("hello world"), pad: leftPad("ab", 5), rep: "ab" repeat 2,        rev: reverse("ab"), before: substringBefore("a-b-c", "-"),        after: substringAfter("a-b-c", "-"), rm: remove("abca", "a"),        col: collapse("aabbc") }"####,
+{ cap: capitalize("quiet harbor"), pad: leftPad("xy", 4), rep: "go" repeat 3, rev: reverse("lamp"), before: substringBefore("red|green|blue", "|"), after: substringAfter("red|green|blue", "|"), rm: remove("banana", "an"), col: collapse("aabbbcc") }"####,
         r####"{
-  "cap": "Hello World",
-  "pad": "   ab",
-  "rep": "abab",
-  "rev": "ba",
-  "before": "a",
-  "after": "b-c",
-  "rm": "bc",
+  "cap": "Quiet Harbor",
+  "pad": "  xy",
+  "rep": "gogogo",
+  "rev": "pmal",
+  "before": "red",
+  "after": "green|blue",
+  "rm": "ba",
   "col": [
     "aa",
-    "bb",
-    "c"
+    "bbb",
+    "cc"
   ]
 }"####,
     ),
@@ -55,45 +65,45 @@ output application/json
 import * from dw::core::Strings
 output application/json
 ---
-     { plural: ["cat", "bus", "city", "person", "goose", "sheep"] map pluralize($),        singular: ["cats", "buses", "cities", "people", "geese", "sheep"] map singularize($),        camel: ["hello_world", "XMLHttpRequest"] map camelize($),        under: ["HelloWorld", "hello-world"] map underscore($),        dash: ["HelloWorld", "hello world"] map dasherize($),        ord: [1, 2, 3, 4, 11, 21, 1.5, -1] map ordinalize($) }"####,
+{ plural: ["lamp", "branch", "puppy", "box", "church", "bell"] map pluralize($), singular: ["lamps", "branches", "puppies", "boxes", "churches", "bells"] map singularize($), camel: ["field_name", "http_server"] map camelize($), under: ["FieldName", "field-name"] map underscore($), dash: ["FieldName", "field name"] map dasherize($), ord: [1, 2, 3, 4, 12, 22, 2.5, 0] map ordinalize($) }"####,
         r####"{
   "plural": [
-    "cats",
-    "buses",
-    "cities",
-    "people",
-    "geese",
-    "sheep"
+    "lamps",
+    "branches",
+    "puppies",
+    "boxes",
+    "churches",
+    "bells"
   ],
   "singular": [
-    "cat",
-    "bus",
-    "city",
-    "person",
-    "goose",
-    "sheep"
+    "lamp",
+    "branch",
+    "puppy",
+    "box",
+    "church",
+    "bell"
   ],
   "camel": [
-    "helloWorld",
-    "xMLHttpRequest"
+    "fieldName",
+    "httpServer"
   ],
   "under": [
-    "hello_world",
-    "hello_world"
+    "field_name",
+    "field_name"
   ],
   "dash": [
-    "hello-world",
-    "hello-world"
+    "field-name",
+    "field-name"
   ],
   "ord": [
     "1st",
     "2nd",
     "3rd",
     "4th",
-    "11th",
-    "21st",
-    "1st",
-    "-1th"
+    "12th",
+    "22nd",
+    "2nd",
+    "0th"
   ]
 }"####,
     ),
@@ -102,17 +112,17 @@ output application/json
 import * from dw::core::Strings
 output application/json
 ---
-     { wrap: wrapWith("ab", "*"), wim: [wrapIfMissing("ab", "x"), wrapIfMissing("xabx", "x")],        pre: prependIfMissing("abc", "xyz"), app: appendIfMissing("abc", "xyz"),        max: withMaxSize("123", 2), all: replaceAll("AAAA", "AAA", "B"),        matches: countMatches("hello worlo!", "lo") }"####,
+{ wrap: wrapWith("note", "~"), wim: [wrapIfMissing("note", "*"), wrapIfMissing("*note*", "*")], pre: prependIfMissing("note", "pre-"), app: appendIfMissing("note", "-end"), max: withMaxSize("harbor", 4), all: replaceAll("banana", "na", "NA"), matches: countMatches("banana", "na") }"####,
         r####"{
-  "wrap": "*ab*",
+  "wrap": "~note~",
   "wim": [
-    "xabx",
-    "xabx"
+    "*note*",
+    "*note*"
   ],
-  "pre": "xyzabc",
-  "app": "abcxyz",
-  "max": "12",
-  "all": "BA",
+  "pre": "pre-note",
+  "app": "note-end",
+  "max": "harb",
+  "all": "baNANA",
   "matches": 2
 }"####,
     ),
@@ -121,17 +131,17 @@ output application/json
 import * from dw::core::Strings
 output application/json
 ---
-     { count: "42 = 11 * 2 + 20" countCharactersBy isNumeric($),        every: "12 34  56" everyCharacter $ == " " or isNumeric($),        some: "someCharacter" someCharacter isUpperCase($),        map: "x234" mapString (if (isNumeric($)) "~" else $),        by: "hello~world=here_data-weave" substringBy $ == "~" or $ == "=" or $ == "_" }"####,
+{ count: "a1b2c3d4" countCharactersBy isNumeric($), every: "1 2 3" everyCharacter $ == " " or isNumeric($), some: "Harbor" someCharacter isUpperCase($), map: "a1b2" mapString (if (isNumeric($)) "#" else $), by: "red,green|blue_cyan" substringBy $ == "," or $ == "|" or $ == "_" }"####,
         r####"{
-  "count": 7,
+  "count": 4,
   "every": true,
   "some": true,
-  "map": "x~~~",
+  "map": "a#b#",
   "by": [
-    "hello",
-    "world",
-    "here",
-    "data-weave"
+    "red",
+    "green",
+    "blue",
+    "cyan"
   ]
 }"####,
     ),
@@ -140,14 +150,14 @@ output application/json
 import * from dw::core::Strings
 output application/json
 ---
-     { ham: hammingDistance("holu", "chau"), bad: hammingDistance("a", "bb"),        lev: levenshteinDistance("kitten", "sitting"), cc: charCode("M"),        ccat: charCodeAt("DataWeave", 1), fcc: fromCharCode(77),        ws: [isWhitespace(""), isWhitespace("  "), isWhitespace("a")] }"####,
+{ ham: hammingDistance("solar", "polar"), bad: hammingDistance("a", "xyz"), lev: levenshteinDistance("harbor", "harbour"), cc: charCode("Q"), ccat: charCodeAt("harbor", 2), fcc: fromCharCode(82), ws: [isWhitespace(""), isWhitespace("\t "), isWhitespace("q")] }"####,
         r####"{
-  "ham": 3,
+  "ham": 1,
   "bad": null,
-  "lev": 3,
-  "cc": 77,
-  "ccat": 97,
-  "fcc": "M",
+  "lev": 1,
+  "cc": 81,
+  "ccat": 114,
+  "fcc": "R",
   "ws": [
     true,
     true,
@@ -160,57 +170,30 @@ output application/json
 import * from dw::core::Strings
 output application/json
 ---
-{ lp: leftPad("ab",5,"."), rp: rightPad("ab",5,"."), rep0: "ab" repeat 0, sbl: substringBeforeLast("a-b-c","-"), sal: substringAfterLast("a-b-c","-"), rev: reverse("abc"), sub: substring("abcdef",1,4), fst: first("abc",2), lst: last("abc",2), rm: remove("abca","a"), un: unwrap("[abc]","["), se: substringEvery("abcdefg",2), col: collapse("aabbc"), cca: charCodeAt("abc",1), w: wrapWith("a","*"), wim: wrapIfMissing("ab","*"), pre: prependIfMissing("abc","x"), app: appendIfMissing("abc","x"), max: withMaxSize("abcdef",3), ra: replaceAll("aaa","a","b"), cm: countMatches("abab","ab"), ccb: countCharactersBy("a1b2", (c) -> isNumeric(c)), ec: everyCharacter("ab", (c) -> c != ""), sc: someCharacter("ab", (c) -> c == "b"), ms: mapString("ab", (c,i) -> c ++ i), sb: substringBy("a,b,c", (c,i) -> c == ","), ham: hammingDistance("abc","abd"), lev: levenshteinDistance("kitten","sitting"), wd: words(" a  b "), ln: lines("a\r\nb\nc") }"####,
+{ lp: leftPad("xy", 4, "0"), rp: rightPad("xy", 4, "0"), rep0: "go" repeat 0, sbl: substringBeforeLast("red|green|blue", "|"), sal: substringAfterLast("red|green|blue", "|"), sub: substring("harbor", 1, 4), fst: first("harbor", 3), lst: last("harbor", 3), un: unwrap("<note>", "<"), se: substringEvery("abcdefgh", 3), wd: words("  red  green  "), ln: lines("one\r\ntwo\nthree") }"####,
         r####"{
-  "lp": "...ab",
-  "rp": "ab...",
+  "lp": "00xy",
+  "rp": "xy00",
   "rep0": "",
-  "sbl": "a-b",
-  "sal": "c",
-  "rev": "cba",
-  "sub": "bcd",
-  "fst": "ab",
-  "lst": "bc",
-  "rm": "bc",
-  "un": "[abc]",
+  "sbl": "red|green",
+  "sal": "blue",
+  "sub": "arb",
+  "fst": "har",
+  "lst": "bor",
+  "un": "<note>",
   "se": [
-    "ab",
-    "cd",
-    "ef",
-    "g"
+    "abc",
+    "def",
+    "gh"
   ],
-  "col": [
-    "aa",
-    "bb",
-    "c"
-  ],
-  "cca": 98,
-  "w": "*a*",
-  "wim": "*ab*",
-  "pre": "xabc",
-  "app": "abcx",
-  "max": "abc",
-  "ra": "bbb",
-  "cm": 2,
-  "ccb": 2,
-  "ec": true,
-  "sc": true,
-  "ms": "a0b1",
-  "sb": [
-    "a",
-    "b",
-    "c"
-  ],
-  "ham": 1,
-  "lev": 3,
   "wd": [
-    "a",
-    "b"
+    "red",
+    "green"
   ],
   "ln": [
-    "a",
-    "b",
-    "c"
+    "one",
+    "two",
+    "three"
   ]
 }"####,
     ),
@@ -219,6 +202,6 @@ output application/json
 #[test]
 fn behaviour_cases() {
     for (script, expected) in CASES {
-        assert_eq!(common::run(script), *expected, "script: {script}");
+        assert_eq!(run(script), *expected, "script: {script}");
     }
 }

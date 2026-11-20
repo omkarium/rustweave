@@ -5,84 +5,82 @@ fn run(script: &str) -> String {
     rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))
 }
 
-#[test]
-fn parsed_temporal_values_keep_their_input_format() {
-    let script = r#"%dw 2.0
+const CASES: &[(&str, &str)] = &[
+    (
+        r####"%dw 2.0
 import * from dw::util::Coercions
 output application/json
 ---
 {
-  date: toDate("2023-28-03", [{format: "yyyy/MM/dd"}, {format: "yyyy-dd-MM"}]),
-  dateTime: toDateTimeOrNull("2003-10-01 23:57:59Z", [{format: "uuuu/MM/dd HH:mm:ssz"}, {format: "uuuu-MM-dd HH:mm:ssz"}]),
-  literalDate: |2003-10-01| as Date {format: "uuuu/MM/dd"},
-  localTime: toLocalTime("13:44:12.283", "HH:mm:ss.n"),
-  localDate: toLocalDateTime("2003-10-01 23:57:59", "uuuu-MM-dd HH:mm:ss")
-}"#;
-    let expected = r#"{
-  "date": "2023-28-03",
-  "dateTime": "2003-10-01 23:57:59Z",
-  "literalDate": "2003/10/01",
-  "localTime": "13:44:12.283",
-  "localDate": "2003-10-01 23:57:59"
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn string_casts_and_arithmetic_revert_to_iso() {
-    let script = r#"%dw 2.0
+  date: toDate("1998-14-07", [{format: "yyyy/MM/dd"}, {format: "yyyy-dd-MM"}]),
+  dateTime: toDateTimeOrNull("1999-03-21 08:14:02Z", [{format: "uuuu/MM/dd HH:mm:ssz"}, {format: "uuuu-MM-dd HH:mm:ssz"}]),
+  literalDate: |1999-03-21| as Date {format: "uuuu/MM/dd"},
+  localTime: toLocalTime("08:14:02.375", "HH:mm:ss.n"),
+  localDate: toLocalDateTime("1999-03-21 08:14:02", "uuuu-MM-dd HH:mm:ss")
+}"####,
+        r####"{
+  "date": "1998-14-07",
+  "dateTime": "1999-03-21 08:14:02Z",
+  "literalDate": "1999/03/21",
+  "localTime": "08:14:02.375",
+  "localDate": "1999-03-21 08:14:02"
+}"####,
+    ),
+    (
+        r####"%dw 2.0
 import * from dw::util::Coercions
 output application/json
 ---
 {
-  castString: (toDate("2023-28-03", [{format: "yyyy-dd-MM"}])) as String,
-  toStringResult: toString(toDate("2023-28-03", [{format: "yyyy-dd-MM"}])),
-  castDateTimeString: (toDateTimeOrNull("2003-10-01 23:57:59Z", [{format: "uuuu-MM-dd HH:mm:ssz"}])) as String,
-  plusPeriod: (|2003-10-01| as Date {format: "uuuu/MM/dd"}) + |P1D|,
-  minusPeriod: (|2003-10-01| as Date {format: "uuuu/MM/dd"}) - |P1D|,
-  dateDifference: (|2003-10-02| as Date {format: "uuuu/MM/dd"}) - (|2003-10-01| as Date {format: "uuuu/MM/dd"})
-}"#;
-    let expected = r#"{
-  "castString": "2023-03-28",
-  "toStringResult": "2023-03-28",
-  "castDateTimeString": "2003-10-01T23:57:59Z",
-  "plusPeriod": "2003-10-02",
-  "minusPeriod": "2003-09-30",
-  "dateDifference": "PT24H"
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn am_pm_format_token_is_lowercase() {
-    let script = r#"{
-  am: |2020-10-01T09:57:59| as String {format: "KK:mm:ss a"},
-  pm: |2020-10-01T23:57:59| as String {format: "KK:mm:ss a"}
-}"#;
-    let expected = r#"{
-  "am": "09:57:59 am",
-  "pm": "11:57:59 pm"
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn function_param_types_have_only_param_type_and_optional() {
-    let script = r#"%dw 2.0
+  castString: (toDate("1998-14-07", [{format: "yyyy-dd-MM"}])) as String,
+  toStringResult: toString(toDate("1998-14-07", [{format: "yyyy-dd-MM"}])),
+  castDateTimeString: (toDateTimeOrNull("1999-03-21 08:14:02Z", [{format: "uuuu-MM-dd HH:mm:ssz"}])) as String,
+  plusPeriod: (|1999-03-21| as Date {format: "uuuu/MM/dd"}) + |P2D|,
+  minusPeriod: (|1999-03-21| as Date {format: "uuuu/MM/dd"}) - |P2D|,
+  dateDifference: (|1999-03-23| as Date {format: "uuuu/MM/dd"}) - (|1999-03-21| as Date {format: "uuuu/MM/dd"})
+}"####,
+        r####"{
+  "castString": "1998-07-14",
+  "toStringResult": "1998-07-14",
+  "castDateTimeString": "1999-03-21T08:14:02Z",
+  "plusPeriod": "1999-03-23",
+  "minusPeriod": "1999-03-19",
+  "dateDifference": "PT48H"
+}"####,
+    ),
+    (
+        r####"{
+  am: |2021-06-15T06:05:09| as String {format: "KK:mm:ss a"},
+  pm: |2021-06-15T18:05:09| as String {format: "KK:mm:ss a"}
+}"####,
+        r####"{
+  "am": "06:05:09 am",
+  "pm": "06:05:09 pm"
+}"####,
+    ),
+    (
+        r####"%dw 2.0
 import * from dw::core::Types
-type AFunction = (String, Number) -> Number
+type Mapper = (Number, String) -> Boolean
 output application/json
 ---
-functionParamTypes(AFunction)"#;
-    let expected = r#"[
-  {
-    "paramType": "String",
-    "optional": false
-  },
+functionParamTypes(Mapper)"####,
+        r####"[
   {
     "paramType": "Number",
     "optional": false
+  },
+  {
+    "paramType": "String",
+    "optional": false
   }
-]"#;
-    assert_eq!(run(script), expected);
+]"####,
+    ),
+];
+
+#[test]
+fn behaviour_cases() {
+    for (script, expected) in CASES {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
 }

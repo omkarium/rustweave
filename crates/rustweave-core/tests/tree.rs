@@ -5,100 +5,94 @@ fn run(script: &str) -> String {
     rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))
 }
 
-#[test]
-fn path_predicates_and_expression_string() {
-    let script = r#"%dw 2.0
+const CASES: &[(&str, &str)] = &[
+    (
+        r####"%dw 2.0
 import * from dw::util::Tree
 output application/json
 ---
 {
-  a: isArrayType([{kind: OBJECT_TYPE, selector: "user", namespace: null}, {kind: ATTRIBUTE_TYPE, selector: "name", namespace: null}]),
-  b: isArrayType([{kind: OBJECT_TYPE, selector: "user", namespace: null}, {kind: ARRAY_TYPE, selector: 0, namespace: null}]),
-  c: isAttributeType([{kind: ATTRIBUTE_TYPE, selector: "name", namespace: null}]),
-  d: isObjectType([{kind: OBJECT_TYPE, selector: "user", namespace: null}, {kind: OBJECT_TYPE, selector: "name", namespace: null}]),
-  e: asExpressionString([{kind: OBJECT_TYPE, selector: "user", namespace: null}, {kind: ATTRIBUTE_TYPE, selector: "name", namespace: null}])
-}"#;
-    let expected = r#"{
+  a: isArrayType([{kind: OBJECT_TYPE, selector: "invoice", namespace: null}, {kind: ATTRIBUTE_TYPE, selector: "amount", namespace: null}]),
+  b: isArrayType([{kind: OBJECT_TYPE, selector: "invoice", namespace: null}, {kind: ARRAY_TYPE, selector: 0, namespace: null}]),
+  c: isAttributeType([{kind: ATTRIBUTE_TYPE, selector: "amount", namespace: null}]),
+  d: isObjectType([{kind: OBJECT_TYPE, selector: "invoice", namespace: null}, {kind: OBJECT_TYPE, selector: "amount", namespace: null}]),
+  e: asExpressionString([{kind: OBJECT_TYPE, selector: "invoice", namespace: null}, {kind: ATTRIBUTE_TYPE, selector: "amount", namespace: null}])
+}"####,
+        r####"{
   "a": false,
   "b": true,
   "c": true,
   "d": true,
-  "e": ".user.@name"
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn map_leaf_values_examples() {
-    let script = r#"%dw 2.0
+  "e": ".invoice.@amount"
+}"####,
+    ),
+    (
+        r####"%dw 2.0
 import * from dw::util::Tree
 output application/json
 ---
 {
-  a: {user: [{name: "mariano", lastName: "achaval"}], group: "data-weave"} mapLeafValues (value, path) -> upper(value),
-  b: {name: "Mariano", test: [1,2,3]} mapLeafValues ((value, path) -> if (isObjectType(path)) "***" else if (isArrayType(path)) "In an array" else "Is an attribute")
-}"#;
-    let expected = r#"{
+  a: {shelf: [{item: "Tea", code: "T-1"}], category: "pantry"} mapLeafValues (value, path) -> upper(value),
+  b: {title: "Harbor", tags: [4, 5, 6]} mapLeafValues ((value, path) -> if (isObjectType(path)) "***" else if (isArrayType(path)) "In an array" else "Is an attribute")
+}"####,
+        r####"{
   "a": {
-    "user": [
+    "shelf": [
       {
-        "name": "MARIANO",
-        "lastName": "ACHAVAL"
+        "item": "TEA",
+        "code": "T-1"
       }
     ],
-    "group": "DATA-WEAVE"
+    "category": "PANTRY"
   },
   "b": {
-    "name": "***",
-    "test": [
+    "title": "***",
+    "tags": [
       "In an array",
       "In an array",
       "In an array"
     ]
   }
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn filter_array_and_object_leafs() {
-    let script = r#"%dw 2.0
+}"####,
+    ),
+    (
+        r####"%dw 2.0
 import * from dw::util::Tree
-var myArray = [1, {name: ["", true], test: 213}, "123", null]
-var myObjects = [{name: "", id: "test"}, {name: "Me", id: null}]
+var rows = [3, {name: ["", false], count: 17}, "42", null]
+var nodes = [{name: "", id: "x"}, {name: "Ok", id: null}]
 output application/json
 ---
 {
-  a: myArray filterArrayLeafs ((value, path) -> !(value is Null or value is String)),
-  b: myArray filterArrayLeafs ((value, path) -> (value is Null or value == 1)),
-  c: {a: [1,2]} filterArrayLeafs ((value, path) -> (value is Null or value == 1)),
-  d: myArray filterArrayLeafs ((value, path) -> !isArrayType(path)),
-  e: {name: "Mariano", lastName: null, age: 123, friends: myObjects} filterObjectLeafs ((value, path) -> !(value is Null or value is String)),
-  f: {c: null, d: "hello"} filterObjectLeafs ((value, path) -> (value is Null and isObjectType(path)))
-}"#;
-    let expected = r#"{
+  a: rows filterArrayLeafs ((value, path) -> !(value is Null or value is String)),
+  b: rows filterArrayLeafs ((value, path) -> (value is Null or value == 3)),
+  c: {k: [3, 4]} filterArrayLeafs ((value, path) -> (value is Null or value == 3)),
+  d: rows filterArrayLeafs ((value, path) -> !isArrayType(path)),
+  e: {name: "Rook", lastName: null, age: 45, links: nodes} filterObjectLeafs ((value, path) -> !(value is Null or value is String)),
+  f: {left: null, right: "keep"} filterObjectLeafs ((value, path) -> (value is Null and isObjectType(path)))
+}"####,
+        r####"{
   "a": [
-    1,
+    3,
     {
       "name": [
-        true
+        false
       ],
-      "test": 213
+      "count": 17
     }
   ],
   "b": [
-    1,
+    3,
     {
       "name": [
         
       ],
-      "test": 213
+      "count": 17
     },
     null
   ],
   "c": {
-    "a": [
-      1
+    "k": [
+      3
     ]
   },
   "d": [
@@ -106,12 +100,12 @@ output application/json
       "name": [
         
       ],
-      "test": 213
+      "count": 17
     }
   ],
   "e": {
-    "age": 123,
-    "friends": [
+    "age": 45,
+    "links": [
       {
         
       },
@@ -121,77 +115,78 @@ output application/json
     ]
   },
   "f": {
-    "c": null
+    "left": null
   }
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn filter_tree_examples() {
-    let script = r#"%dw 2.0
+}"####,
+    ),
+    (
+        r####"%dw 2.0
 import * from dw::util::Tree
 output application/json
 ---
 {
-  a: {name: "", lastName: "Achaval", friends: [{id: "", test: true}, {age: 123}, ""]} filterTree ((value, path) -> if (value is String) !isEmpty(value) else true),
+  a: {name: "", lastName: "Rook", links: [{id: "", active: true}, {age: 45}, ""]} filterTree ((value, path) -> if (value is String) !isEmpty(value) else true),
   b: null filterTree ((value, path) -> value is String),
-  c: [{name: "Mariano", friends: []}, {test: [1,2,3]}, {dw: ""}] filterTree ((value, path) -> if (value is Array) !isEmpty(value as Array) else true)
-}"#;
-    let expected = r#"{
+  c: [{name: "Rook", links: []}, {test: [4, 5, 6]}, {code: ""}] filterTree ((value, path) -> if (value is Array) !isEmpty(value as Array) else true)
+}"####,
+        r####"{
   "a": {
-    "lastName": "Achaval",
-    "friends": [
+    "lastName": "Rook",
+    "links": [
       {
-        "test": true
+        "active": true
       },
       {
-        "age": 123
+        "age": 45
       }
     ]
   },
   "b": null,
   "c": [
     {
-      "name": "Mariano"
+      "name": "Rook"
     },
     {
       "test": [
-        1,
-        2,
-        3
+        4,
+        5,
+        6
       ]
     },
     {
-      "dw": ""
+      "code": ""
     }
   ]
-}"#;
-    assert_eq!(run(script), expected);
-}
-
-#[test]
-fn node_exists_examples() {
-    let script = r#"%dw 2.0
+}"####,
+    ),
+    (
+        r####"%dw 2.0
 import * from dw::util::Tree
-var myObject = {user: [{name: "mariano", lastName: "achaval", friends: [{name: "julian"}, {name: "tom"}]}, {name: "leandro", lastName: "shokida", friends: [{name: "peter"}, {name: "robert"}]}]}
+var catalog = {shelf: [{name: "Tea", code: "T-1", tags: [{name: "green"}, {name: "loose"}]}, {name: "Rope", code: "R-2", tags: [{name: "nylon"}, {name: "braid"}]}]}
 output application/json
 ---
 {
-  mariano: myObject nodeExists ((value, path) -> path[-1].selector == "name" and value == "mariano"),
-  julian: myObject nodeExists ((value, path) -> path[-1].selector == "name" and value == "julian"),
-  tom: myObject nodeExists ($$[-1].selector == "name" and $ == "tom"),
-  peter: myObject nodeExists ($$[-1].selector == "name" and $ == "peter"),
-  wrongField: myObject nodeExists ($$[-1].selector == "wrongField"),
-  teo: myObject nodeExists ($$[-1].selector == "name" and $ == "teo")
-}"#;
-    let expected = r#"{
-  "mariano": true,
-  "julian": true,
-  "tom": true,
-  "peter": true,
+  tea: catalog nodeExists ((value, path) -> path[-1].selector == "name" and value == "Tea"),
+  green: catalog nodeExists ((value, path) -> path[-1].selector == "name" and value == "green"),
+  loose: catalog nodeExists ($$[-1].selector == "name" and $ == "loose"),
+  braid: catalog nodeExists ($$[-1].selector == "name" and $ == "braid"),
+  wrongField: catalog nodeExists ($$[-1].selector == "brand"),
+  coffee: catalog nodeExists ($$[-1].selector == "name" and $ == "Coffee")
+}"####,
+        r####"{
+  "tea": true,
+  "green": true,
+  "loose": true,
+  "braid": true,
   "wrongField": false,
-  "teo": false
-}"#;
-    assert_eq!(run(script), expected);
+  "coffee": false
+}"####,
+    ),
+];
+
+#[test]
+fn behaviour_cases() {
+    for (script, expected) in CASES {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
 }

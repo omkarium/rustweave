@@ -1,261 +1,358 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Offline tests for the Rust implementations of the standard-library functions.
+//! Offline tests for the standard-library functions.
 //!
 //! These tests need no external runtime and run as part of `cargo test`.
 
 fn run(script: &str) -> String {
-    rustweave_core::run(script, &[]).unwrap_or_else(|e| panic!("{e}"))
+    rustweave_core::run(script, &[]).unwrap_or_else(|error| panic!("{error}"))
 }
 
-#[test]
-fn core_library_extras() {
-    let script = r#"output application/json
+const CORE_COLLECTION_HELPERS: &[(&str, &str)] = &[(
+    r####"output application/json
 ---
-{ s: sizeOf("abc"), o: sizeOf({a:1,b:2}), n: sizeOf(123), es: isEmpty(""), eo: isEmpty({}), io: indexOf("abcabc","bc"), lio: lastIndexOf("abcabc","bc"), then: 5 then ($+1), on: null onNull () -> "x", blank: [isBlank(null), isBlank("  "), isBlank("x")], minBy: [{n:2},{n:1}] minBy $.n, maxBy: [{n:2},{n:1}] maxBy $.n, avg: avg([1,2,3]) }"#;
-    let expected = r#"{
-  "s": 3,
-  "o": 2,
-  "n": 3,
-  "es": true,
-  "eo": true,
-  "io": 1,
-  "lio": 4,
-  "then": 6,
-  "on": "x",
-  "blank": [
+{
+  chars: sizeOf("harbor"),
+  fields: sizeOf({x: 1, y: 2, z: 3}),
+  digits: sizeOf(98765),
+  emptyText: isEmpty(""),
+  emptyObject: isEmpty({}),
+  firstFind: indexOf("satellite", "ll"),
+  lastFind: lastIndexOf("satellite", "ll"),
+  increment: 8 then ($ + 3),
+  fallback: null onNull () -> "default",
+  blanks: [isBlank(null), isBlank("\t "), isBlank("z")],
+  smallest: [{v: 9}, {v: 4}, {v: 7}] minBy $.v,
+  largest: [{v: 9}, {v: 4}, {v: 7}] maxBy $.v,
+  mean: avg([2, 4, 6, 8])
+}"####,
+    r####"{
+  "chars": 6,
+  "fields": 3,
+  "digits": 5,
+  "emptyText": true,
+  "emptyObject": true,
+  "firstFind": 4,
+  "lastFind": 4,
+  "increment": 11,
+  "fallback": "default",
+  "blanks": [
     true,
     true,
     false
   ],
-  "minBy": {
-    "n": 1
+  "smallest": {
+    "v": 4
   },
-  "maxBy": {
-    "n": 2
+  "largest": {
+    "v": 9
   },
-  "avg": 2
-}"#;
-    assert_eq!(run(script), expected);
-}
+  "mean": 5
+}"####,
+)];
 
 #[test]
-fn array_library_extras() {
-    let script = r#"%dw 2.0
+fn core_collection_helpers() {
+    for (script, expected) in CORE_COLLECTION_HELPERS {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
+}
+
+const ARRAY_WINDOW_HELPERS: &[(&str, &str)] = &[(
+    r####"%dw 2.0
 import * from dw::core::Arrays
 output application/json
 ---
-{ take: ([1,2,3] take 5), drop: ([1,2,3] drop 5), slice: slice([1,2,3,4],1,3), iw: ([1,2,3] indexWhere ($ > 1)), dw: ([1,2,3] dropWhile ($ < 3)), p: ([1,2,3,4] partition (($ mod 2) == 0)), fw: ([1,2,3] firstWith ($ > 1)), div: divideBy([1,2,3,4,5],2), sw: splitWhere([1,2,3,4], (x) -> x>2), none: ([1,2,3] indexWhere ($ > 9)) }"#;
-    let expected = r#"{
+{
+  take: ([2, 4, 6] take 5),
+  drop: ([2, 4, 6] drop 5),
+  slice: slice([5, 10, 15, 20], 1, 3),
+  index: ([3, 6, 9] indexWhere ($ >= 6)),
+  dropWhile: ([2, 4, 6] dropWhile ($ < 6)),
+  parts: ([1, 2, 3, 4, 5] partition (($ mod 2) == 0)),
+  first: ([2, 4, 6] firstWith ($ > 3)),
+  groups: divideBy([2, 4, 6, 8, 10], 2),
+  split: splitWhere([2, 4, 6, 8], (x) -> x > 4),
+  absent: ([3, 6, 9] indexWhere ($ > 20))
+}"####,
+    r####"{
   "take": [
-    1,
     2,
-    3
+    4,
+    6
   ],
   "drop": [
     
   ],
   "slice": [
-    2,
-    3
+    10,
+    15
   ],
-  "iw": 1,
-  "dw": [
-    3
+  "index": 1,
+  "dropWhile": [
+    6
   ],
-  "p": {
+  "parts": {
     "success": [
       2,
       4
     ],
     "failure": [
       1,
-      3
-    ]
-  },
-  "fw": 2,
-  "div": [
-    [
-      1,
-      2
-    ],
-    [
       3,
-      4
-    ],
-    [
       5
     ]
+  },
+  "first": 4,
+  "groups": [
+    [
+      2,
+      4
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      10
+    ]
   ],
-  "sw": {
+  "split": {
     "l": [
-      1,
-      2
+      2,
+      4
     ],
     "r": [
-      3,
-      4
+      6,
+      8
     ]
   },
-  "none": -1
-}"#;
-    assert_eq!(run(script), expected);
-}
+  "absent": -1
+}"####,
+)];
 
 #[test]
-fn string_library_extras() {
-    let script = r#"%dw 2.0
+fn array_window_helpers() {
+    for (script, expected) in ARRAY_WINDOW_HELPERS {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
+}
+
+const STRING_TEXT_HELPERS: &[(&str, &str)] = &[(
+    r####"%dw 2.0
 import * from dw::core::Strings
 output application/json
 ---
-{ lp: leftPad("ab",5,"."), rp: rightPad("ab",5,"."), rep0: "ab" repeat 0, sbl: substringBeforeLast("a-b-c","-"), sal: substringAfterLast("a-b-c","-"), rev: reverse("abc"), sub: substring("abcdef",1,4), fst: first("abc",2), lst: last("abc",2), rm: remove("abca","a"), un: unwrap("[abc]","["), se: substringEvery("abcdefg",2), col: collapse("aabbc"), cca: charCodeAt("abc",1), w: wrapWith("a","*"), wim: wrapIfMissing("ab","*"), pre: prependIfMissing("abc","x"), app: appendIfMissing("abc","x"), max: withMaxSize("abcdef",3), ra: replaceAll("aaa","a","b"), cm: countMatches("abab","ab"), ccb: countCharactersBy("a1b2", (c) -> isNumeric(c)), ec: everyCharacter("ab", (c) -> c != ""), sc: someCharacter("ab", (c) -> c == "b"), ms: mapString("ab", (c,i) -> c ++ i), sb: substringBy("a,b,c", (c,i) -> c == ","), ham: hammingDistance("abc","abd"), lev: levenshteinDistance("kitten","sitting"), wd: words(" a  b "), ln: lines("a\r\nb\nc") }"#;
-    let expected = r#"{
-  "lp": "...ab",
-  "rp": "ab...",
-  "rep0": "",
-  "sbl": "a-b",
-  "sal": "c",
-  "rev": "cba",
-  "sub": "bcd",
-  "fst": "ab",
-  "lst": "bc",
-  "rm": "bc",
-  "un": "[abc]",
-  "se": [
-    "ab",
-    "cd",
-    "ef",
-    "g"
+{
+  left: leftPad("xy", 4, "0"),
+  right: rightPad("xy", 4, "0"),
+  none: "xy" repeat 0,
+  beforeLast: substringBeforeLast("red|green|blue", "|"),
+  afterLast: substringAfterLast("red|green|blue", "|"),
+  flipped: reverse("straw"),
+  middle: substring("strawberry", 2, 6),
+  head: first("harbor", 3),
+  tail: last("harbor", 3),
+  strip: remove("banana", "an"),
+  unwrap: unwrap("<note>", "<"),
+  every: substringEvery("abcdefgh", 3),
+  groups: collapse("aabbbcc"),
+  code: charCodeAt("harbor", 2),
+  wrapped: wrapWith("done", "~"),
+  wrappedIf: wrapIfMissing("done", "~"),
+  prefixed: prependIfMissing("done", "pre-"),
+  suffixed: appendIfMissing("done", "-end"),
+  limited: withMaxSize("harbor", 4),
+  all: replaceAll("banana", "na", "NA"),
+  count: countMatches("banana", "na"),
+  chars: countCharactersBy("a1b2c3", (c) -> isNumeric(c)),
+  each: everyCharacter("abc", (c) -> c != ""),
+  some: someCharacter("abc", (c) -> c == "b"),
+  mapped: mapString("abc", (c, i) -> c ++ i),
+  splitPred: substringBy("a,b,c", (c, i) -> c == ","),
+  ham: hammingDistance("solar", "polar"),
+  lev: levenshteinDistance("harbor", "harbour"),
+  words: words("  red  green "),
+  lines: lines("one\r\ntwo\nthree")
+}"####,
+    r####"{
+  "left": "00xy",
+  "right": "xy00",
+  "none": "",
+  "beforeLast": "red|green",
+  "afterLast": "blue",
+  "flipped": "warts",
+  "middle": "rawb",
+  "head": "har",
+  "tail": "bor",
+  "strip": "ba",
+  "unwrap": "<note>",
+  "every": [
+    "abc",
+    "def",
+    "gh"
   ],
-  "col": [
+  "groups": [
     "aa",
-    "bb",
-    "c"
+    "bbb",
+    "cc"
   ],
-  "cca": 98,
-  "w": "*a*",
-  "wim": "*ab*",
-  "pre": "xabc",
-  "app": "abcx",
-  "max": "abc",
-  "ra": "bbb",
-  "cm": 2,
-  "ccb": 2,
-  "ec": true,
-  "sc": true,
-  "ms": "a0b1",
-  "sb": [
+  "code": 114,
+  "wrapped": "~done~",
+  "wrappedIf": "~done~",
+  "prefixed": "pre-done",
+  "suffixed": "done-end",
+  "limited": "harb",
+  "all": "baNANA",
+  "count": 2,
+  "chars": 3,
+  "each": true,
+  "some": true,
+  "mapped": "a0b1c2",
+  "splitPred": [
     "a",
     "b",
     "c"
   ],
   "ham": 1,
-  "lev": 3,
-  "wd": [
-    "a",
-    "b"
+  "lev": 1,
+  "words": [
+    "red",
+    "green"
   ],
-  "ln": [
-    "a",
-    "b",
-    "c"
+  "lines": [
+    "one",
+    "two",
+    "three"
   ]
-}"#;
-    assert_eq!(run(script), expected);
-}
+}"####,
+)];
 
 #[test]
-fn object_library_extras() {
-    let script = r#"%dw 2.0
+fn string_text_helpers() {
+    for (script, expected) in STRING_TEXT_HELPERS {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
+}
+
+const OBJECT_ENTRY_HELPERS: &[(&str, &str)] = &[(
+    r####"%dw 2.0
 import * from dw::core::Objects
 output application/json
 ---
-{ es: entrySet({a:1}), names: nameSet({a:1}), vals: valueSet({a:1}), ee: ({a:1,b:2} everyEntry ($ > 0)), se: ({a:1,b:2} someEntry ($ == 2)), mw: mergeWith({a:1,b:2},{b:3,c:4}), div: divideBy({a:1,b:2,c:3},2), tw: ({a:1,b:2,c:3} takeWhile ($ < 3)) }"#;
-    let expected = r#"{
-  "es": [
+{
+  entries: entrySet({x: 11}),
+  names: nameSet({x: 11}),
+  values: valueSet({x: 11}),
+  all: ({x: 11, y: 12} everyEntry ($ > 10)),
+  any: ({x: 11, y: 12} someEntry ($ == 12)),
+  merged: mergeWith({x: 11, y: 12}, {y: 13, z: 14}),
+  groups: divideBy({x: 11, y: 12, z: 13}, 2),
+  prefix: ({x: 11, y: 12, z: 13} takeWhile ($ < 13))
+}"####,
+    r####"{
+  "entries": [
     {
-      "key": "a",
-      "value": 1,
+      "key": "x",
+      "value": 11,
       "attributes": {
         
       }
     }
   ],
   "names": [
-    "a"
+    "x"
   ],
-  "vals": [
-    1
+  "values": [
+    11
   ],
-  "ee": true,
-  "se": true,
-  "mw": {
-    "a": 1,
-    "b": 3,
-    "c": 4
+  "all": true,
+  "any": true,
+  "merged": {
+    "x": 11,
+    "y": 13,
+    "z": 14
   },
-  "div": [
+  "groups": [
     {
-      "a": 1,
-      "b": 2
+      "x": 11,
+      "y": 12
     },
     {
-      "c": 3
+      "z": 13
     }
   ],
-  "tw": {
-    "a": 1,
-    "b": 2
+  "prefix": {
+    "x": 11,
+    "y": 12
   }
-}"#;
-    assert_eq!(run(script), expected);
-}
+}"####,
+)];
 
 #[test]
-fn string_inflector_helpers() {
-    let script = r#"%dw 2.0
+fn object_entry_helpers() {
+    for (script, expected) in OBJECT_ENTRY_HELPERS {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
+}
+
+const STRING_CASE_HELPERS: &[(&str, &str)] = &[(
+    r####"%dw 2.0
 import * from dw::core::Strings
 output application/json
 ---
-{ plural: ["cat", "bus", "city", "person", "goose", "sheep"] map pluralize($), singular: ["cats", "buses", "cities", "people", "geese", "sheep"] map singularize($), camel: ["hello_world", "XMLHttpRequest"] map camelize($), under: ["HelloWorld", "hello-world"] map underscore($), dash: ["HelloWorld", "hello world"] map dasherize($), ord: [1, 2, 3, 4, 11, 21, 1.5, -1] map ordinalize($) }"#;
-    let expected = r#"{
+{
+  plural: ["lamp", "branch", "puppy", "box", "church", "bell"] map pluralize($),
+  singular: ["lamps", "branches", "puppies", "boxes", "churches", "bells"] map singularize($),
+  camel: ["field_name", "http_server"] map camelize($),
+  under: ["FieldName", "field-name"] map underscore($),
+  dash: ["FieldName", "field name"] map dasherize($),
+  ord: [1, 2, 3, 4, 12, 22, 2.5, 0] map ordinalize($)
+}"####,
+    r####"{
   "plural": [
-    "cats",
-    "buses",
-    "cities",
-    "people",
-    "geese",
-    "sheep"
+    "lamps",
+    "branches",
+    "puppies",
+    "boxes",
+    "churches",
+    "bells"
   ],
   "singular": [
-    "cat",
-    "bus",
-    "city",
-    "person",
-    "goose",
-    "sheep"
+    "lamp",
+    "branch",
+    "puppy",
+    "box",
+    "church",
+    "bell"
   ],
   "camel": [
-    "helloWorld",
-    "xMLHttpRequest"
+    "fieldName",
+    "httpServer"
   ],
   "under": [
-    "hello_world",
-    "hello_world"
+    "field_name",
+    "field_name"
   ],
   "dash": [
-    "hello-world",
-    "hello-world"
+    "field-name",
+    "field-name"
   ],
   "ord": [
     "1st",
     "2nd",
     "3rd",
     "4th",
-    "11th",
-    "21st",
-    "1st",
-    "-1th"
+    "12th",
+    "22nd",
+    "2nd",
+    "0th"
   ]
-}"#;
-    assert_eq!(run(script), expected);
+}"####,
+)];
+
+#[test]
+fn string_case_helpers() {
+    for (script, expected) in STRING_CASE_HELPERS {
+        assert_eq!(run(script), *expected, "script: {script}");
+    }
 }

@@ -10,7 +10,7 @@ fn literal_metadata_name_and_base() {
     let script = r#"%dw 2.0
 import * from dw::core::Types
 type AType = String {format: "YYYY-MM-dd"}
-type ALiteral = "Mariano"
+type ALiteral = "cobalt"
 type ANumber = Number
 type AArray = Array<String> {n: 1}
 output application/json
@@ -30,7 +30,7 @@ output application/json
   "metadata": {
     "format": "YYYY-MM-dd"
   },
-  "literal": "Mariano",
+  "literal": "cobalt",
   "literalType": true,
   "name": "AType",
   "arrayName": "AArray",
