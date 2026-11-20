@@ -1819,6 +1819,24 @@ impl Function {
         "Splits text at its last separator occurrence."
     );
     index_function!(
+        EXTRA_COMMON_IDENTITY,
+        "dw::extra::Common",
+        "identity",
+        "Returns its argument unchanged."
+    );
+    index_function!(
+        EXTRA_COMMON_PIPE,
+        "dw::extra::Common",
+        "pipe",
+        "Builds a left-to-right function pipeline."
+    );
+    index_function!(
+        EXTRA_COMMON_COMPOSE,
+        "dw::extra::Common",
+        "compose",
+        "Builds a right-to-left function pipeline."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2130,6 +2148,9 @@ impl Function {
         Self::EXTRA_COMMON_ZFILL,
         Self::EXTRA_COMMON_PARTITION,
         Self::EXTRA_COMMON_RPARTITION,
+        Self::EXTRA_COMMON_IDENTITY,
+        Self::EXTRA_COMMON_PIPE,
+        Self::EXTRA_COMMON_COMPOSE,
         Self::DIFF_DIFF,
     ];
 }

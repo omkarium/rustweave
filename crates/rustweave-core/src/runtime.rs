@@ -19,6 +19,10 @@ pub enum RValue {
     Overloads(Vec<Rc<Closure>>),
     /// A name resolved to a standard-library function.
     Builtin(&'static str),
+    /// An array whose elements include function values.
+    FunctionList(Vec<RValue>),
+    /// A composed function pipeline and its application order.
+    Sequence(Vec<RValue>, bool),
 }
 
 /// A user-defined function with its captured environment.

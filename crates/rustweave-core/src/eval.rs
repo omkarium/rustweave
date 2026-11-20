@@ -51,10 +51,31 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
         }
         Expr::Array(items) => {
             let mut values = Vec::with_capacity(items.len());
+            let mut has_function = false;
             for item in items {
-                values.push(as_value(eval(item, env)?)?);
+                let evaluated = eval(item, env)?;
+                match &evaluated {
+                    RValue::Val(_) => {}
+                    RValue::Regex(_) => {
+                        return Err(DwError::new("expected a value, found a regular expression"))
+                    }
+                    _ => has_function = true,
+                }
+                values.push(evaluated);
             }
-            Ok(RValue::Val(Value::Array(values)))
+            if has_function {
+                Ok(RValue::FunctionList(values))
+            } else {
+                Ok(RValue::Val(Value::Array(
+                    values
+                        .into_iter()
+                        .map(|value| match value {
+                            RValue::Val(value) => value,
+                            _ => unreachable!(),
+                        })
+                        .collect(),
+                )))
+            }
         }
         Expr::ArrayCons(head, tail) => {
             let head = as_value(eval(head, env)?)?;
@@ -385,8 +406,7 @@ fn eval_call(callee: &Expr, args: &[Expr], env: &Env) -> Result<RValue, DwError>
                 };
                 values.push(eval(&expr, env)?);
             }
-            let value = stdlib::call(name, &values)?;
-            Ok(RValue::Val(value))
+            stdlib::call_rvalue(name, &values)
         }
         RValue::Func(closure) => {
             let values = eval_args(args, env)?;
@@ -398,7 +418,13 @@ fn eval_call(callee: &Expr, args: &[Expr], env: &Env) -> Result<RValue, DwError>
                 .ok_or_else(|| DwError::new("no matching function overload"))?;
             call_closure(closure, &values)
         }
-        RValue::Regex(_) | RValue::Val(_) => Err(DwError::new("value is not callable")),
+        RValue::Sequence(functions, left_to_right) => {
+            let values = eval_args(args, env)?;
+            call_sequence(&functions, left_to_right, &values)
+        }
+        RValue::FunctionList(_) | RValue::Regex(_) | RValue::Val(_) => {
+            Err(DwError::new("value is not callable"))
+        }
     }
 }
 
@@ -430,18 +456,38 @@ fn call_closure(closure: &Closure, args: &[RValue]) -> Result<RValue, DwError> {
 /// Calls a runtime function value with already evaluated arguments.
 pub fn call_value(callee: &RValue, args: &[RValue]) -> Result<RValue, DwError> {
     match callee {
-        RValue::Builtin(name) => {
-            let value = stdlib::call(name, args)?;
-            Ok(RValue::Val(value))
-        }
+        RValue::Builtin(name) => stdlib::call_rvalue(name, args),
         RValue::Func(closure) => call_closure(closure, args),
         RValue::Overloads(overloads) => {
             let closure = select_overload(overloads, args)
                 .ok_or_else(|| DwError::new("no matching function overload"))?;
             call_closure(closure, args)
         }
-        RValue::Regex(_) | RValue::Val(_) => Err(DwError::new("value is not callable")),
+        RValue::Sequence(functions, left_to_right) => {
+            call_sequence(functions, *left_to_right, args)
+        }
+        RValue::FunctionList(_) | RValue::Regex(_) | RValue::Val(_) => {
+            Err(DwError::new("value is not callable"))
+        }
     }
+}
+
+fn call_sequence(
+    functions: &[RValue],
+    left_to_right: bool,
+    args: &[RValue],
+) -> Result<RValue, DwError> {
+    let mut current = args.first().cloned().unwrap_or(RValue::Val(Value::Null));
+    if left_to_right {
+        for function in functions {
+            current = call_value(function, &[current])?;
+        }
+    } else {
+        for function in functions.iter().rev() {
+            current = call_value(function, &[current])?;
+        }
+    }
+    Ok(current)
 }
 
 /// Chooses the best overload for the supplied arguments.
@@ -488,7 +534,7 @@ fn type_matches(value: &RValue, type_name: &str) -> bool {
         "Any" => true,
         "Function" => matches!(
             value,
-            RValue::Func(_) | RValue::Overloads(_) | RValue::Builtin(_)
+            RValue::Func(_) | RValue::Overloads(_) | RValue::Builtin(_) | RValue::Sequence(_, _)
         ),
         "Regex" => matches!(value, RValue::Regex(_)),
         _ => match value {

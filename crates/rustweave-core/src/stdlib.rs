@@ -317,6 +317,8 @@ const NAMES: &[&str] = &[
     "rstrip",
     "zfill",
     "rpartition",
+    "identity",
+    "pipe",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -335,6 +337,7 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
     match module {
         "dw::core::Binaries" => &[("fromHex", "binariesFromHex"), ("toHex", "binariesToHex")],
         "dw::core::Arrays" => &[("partition", "partition")],
+        "dw::core::URL" => &[("compose", "compose")],
         "dw::core::Types" => &[
             ("isArrayType", "typesIsArrayType"),
             ("isObjectType", "typesIsObjectType"),
@@ -364,6 +367,9 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("zfill", "zfill"),
             ("partition", "extraPartition"),
             ("rpartition", "rpartition"),
+            ("identity", "identity"),
+            ("pipe", "pipe"),
+            ("compose", "extraCompose"),
         ],
         _ => &[],
     }
@@ -618,6 +624,7 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "zfill" => extra_zfill(args),
         "extraPartition" => extra_partition(args, false),
         "rpartition" => extra_partition(args, true),
+        "identity" => Ok(value(args, 0)?.clone()),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -831,6 +838,15 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "fromRadixNumber" => radix_number(args, 0, true),
         "toRadixNumber" => radix_string(args, 0, true),
         other => Err(DwError::new(format!("unknown function '{other}'"))),
+    }
+}
+
+/// Dispatches a standard-library function that may produce a function value.
+pub fn call_rvalue(name: &str, args: &[RValue]) -> Result<RValue, DwError> {
+    match name {
+        "pipe" => extra_sequence(args, true),
+        "extraCompose" => extra_sequence(args, false),
+        _ => call(name, args).map(RValue::Val),
     }
 }
 
@@ -4160,10 +4176,13 @@ fn selector_kind(selector: &Value) -> Option<(String, Value)> {
 fn apply_updater(new_value: &RValue, old: &Value, index: usize) -> Result<Value, DwError> {
     match new_value {
         RValue::Val(value) => Ok(value.clone()),
-        RValue::Func(_) | RValue::Builtin(_) | RValue::Overloads(_) => call_fn(
-            new_value,
-            vec![old.clone(), Value::Number(Number::from_usize(index))],
-        ),
+        RValue::Func(_) | RValue::Builtin(_) | RValue::Overloads(_) | RValue::Sequence(_, _) => {
+            call_fn(
+                new_value,
+                vec![old.clone(), Value::Number(Number::from_usize(index))],
+            )
+        }
+        RValue::FunctionList(_) => Err(DwError::new("a function list is not a value provider")),
         RValue::Regex(_) => Err(DwError::new("a regular expression is not a value provider")),
     }
 }
@@ -5126,6 +5145,27 @@ fn extra_partition(args: &[RValue], last: bool) -> Result<Value, DwError> {
         ],
     };
     Ok(Value::Array(parts))
+}
+
+fn extra_sequence(args: &[RValue], left_to_right: bool) -> Result<RValue, DwError> {
+    let functions = match args.first() {
+        Some(RValue::FunctionList(items)) => items.clone(),
+        Some(RValue::Val(Value::Array(items))) if items.is_empty() => Vec::new(),
+        Some(RValue::Val(Value::Array(_))) => {
+            return Err(DwError::new("expected an array of functions"))
+        }
+        Some(_) => return Err(DwError::new("expected an array of functions")),
+        None => return Err(DwError::new("missing function array")),
+    };
+    for function in &functions {
+        if !matches!(
+            function,
+            RValue::Func(_) | RValue::Overloads(_) | RValue::Builtin(_) | RValue::Sequence(_, _)
+        ) {
+            return Err(DwError::new("every item must be a function"));
+        }
+    }
+    Ok(RValue::Sequence(functions, left_to_right))
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {
