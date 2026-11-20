@@ -1717,6 +1717,36 @@ impl Function {
         "Removes duplicate values from an array."
     );
     index_function!(
+        EXTRA_COMMON_FROM_ENTRIES,
+        "dw::extra::Common",
+        "fromEntries",
+        "Builds an object from key/value entries."
+    );
+    index_function!(
+        EXTRA_COMMON_ASSIGN,
+        "dw::extra::Common",
+        "assign",
+        "Merges two objects with source values taking precedence."
+    );
+    index_function!(
+        EXTRA_COMMON_PICK,
+        "dw::extra::Common",
+        "pick",
+        "Keeps only the requested object keys."
+    );
+    index_function!(
+        EXTRA_COMMON_OMIT,
+        "dw::extra::Common",
+        "omit",
+        "Removes the requested object keys."
+    );
+    index_function!(
+        EXTRA_COMMON_HAS_OWN,
+        "dw::extra::Common",
+        "hasOwn",
+        "Reports whether an object contains a key."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2011,6 +2041,11 @@ impl Function {
         Self::EXTRA_COMMON_CHUNK,
         Self::EXTRA_COMMON_COMPACT,
         Self::EXTRA_COMMON_UNIQUE,
+        Self::EXTRA_COMMON_FROM_ENTRIES,
+        Self::EXTRA_COMMON_ASSIGN,
+        Self::EXTRA_COMMON_PICK,
+        Self::EXTRA_COMMON_OMIT,
+        Self::EXTRA_COMMON_HAS_OWN,
         Self::DIFF_DIFF,
     ];
 }

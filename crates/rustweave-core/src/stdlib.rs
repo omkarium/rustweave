@@ -301,6 +301,11 @@ const NAMES: &[&str] = &[
     "chunk",
     "compact",
     "unique",
+    "fromEntries",
+    "assign",
+    "pick",
+    "omit",
+    "hasOwn",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -330,6 +335,11 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("chunk", "chunk"),
             ("compact", "compact"),
             ("unique", "unique"),
+            ("fromEntries", "fromEntries"),
+            ("assign", "assign"),
+            ("pick", "pick"),
+            ("omit", "omit"),
+            ("hasOwn", "hasOwn"),
         ],
         _ => &[],
     }
@@ -567,6 +577,11 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "chunk" => extra_chunk(args),
         "compact" => extra_compact(args),
         "unique" => extra_unique(args),
+        "fromEntries" => extra_from_entries(args),
+        "assign" => extra_assign(args),
+        "pick" => extra_pick(args),
+        "omit" => extra_omit(args),
+        "hasOwn" => extra_has_own(args),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -4692,6 +4707,132 @@ fn extra_unique(args: &[RValue]) -> Result<Value, DwError> {
         }
     }
     Ok(Value::Array(out))
+}
+
+fn extra_from_entries(args: &[RValue]) -> Result<Value, DwError> {
+    let entries = array(args, 0)?;
+    let mut out: Vec<(String, Value)> = Vec::new();
+    for entry in entries {
+        let (key, value) = match entry {
+            Value::Object(fields) => {
+                let mut key = None;
+                let mut value = None;
+                for (name, field) in fields {
+                    match name.as_str() {
+                        "key" => key = Some(field),
+                        "value" => value = Some(field),
+                        _ => {}
+                    }
+                }
+                let key = match key {
+                    Some(Value::String(text)) => text,
+                    Some(other) => {
+                        return Err(DwError::new(format!(
+                            "entry key must be a String, found {}",
+                            other.type_name()
+                        )))
+                    }
+                    None => return Err(DwError::new("entry is missing its key")),
+                };
+                let value = value.ok_or_else(|| DwError::new("entry is missing its value"))?;
+                (key, value)
+            }
+            Value::Array(items) => {
+                if items.len() != 2 {
+                    return Err(DwError::new("array entries must have two elements"));
+                }
+                let key = match &items[0] {
+                    Value::String(text) => text.clone(),
+                    other => {
+                        return Err(DwError::new(format!(
+                            "entry key must be a String, found {}",
+                            other.type_name()
+                        )))
+                    }
+                };
+                (key, items[1].clone())
+            }
+            other => {
+                return Err(DwError::new(format!(
+                    "entries must be objects or arrays, found {}",
+                    other.type_name()
+                )))
+            }
+        };
+        if let Some(existing) = out.iter_mut().find(|(name, _)| name == &key) {
+            existing.1 = value;
+        } else {
+            out.push((key, value));
+        }
+    }
+    Ok(Value::Object(out))
+}
+
+fn extra_assign(args: &[RValue]) -> Result<Value, DwError> {
+    let target = object(args, 0)?;
+    let source = object(args, 1)?;
+    let mut out = target;
+    for (key, value) in source {
+        if let Some(position) = out.iter().position(|(name, _)| name == &key) {
+            out[position] = (key.clone(), value);
+            let mut index = out.len();
+            while index > position + 1 {
+                index -= 1;
+                if out[index].0 == key {
+                    out.remove(index);
+                }
+            }
+        } else {
+            out.push((key, value));
+        }
+    }
+    Ok(Value::Object(out))
+}
+
+fn extra_key_set(args: &[RValue], index: usize) -> Result<HashSet<String>, DwError> {
+    let mut keys = HashSet::new();
+    for item in array(args, index)? {
+        match item {
+            Value::String(text) => {
+                keys.insert(text);
+            }
+            other => {
+                return Err(DwError::new(format!(
+                    "expected String keys, found {}",
+                    other.type_name()
+                )))
+            }
+        }
+    }
+    Ok(keys)
+}
+
+fn extra_pick(args: &[RValue]) -> Result<Value, DwError> {
+    let entries = object(args, 0)?;
+    let keys = extra_key_set(args, 1)?;
+    Ok(Value::Object(
+        entries
+            .into_iter()
+            .filter(|(key, _)| keys.contains(key))
+            .collect(),
+    ))
+}
+
+fn extra_omit(args: &[RValue]) -> Result<Value, DwError> {
+    let entries = object(args, 0)?;
+    let keys = extra_key_set(args, 1)?;
+    Ok(Value::Object(
+        entries
+            .into_iter()
+            .filter(|(key, _)| !keys.contains(key))
+            .collect(),
+    ))
+}
+
+fn extra_has_own(args: &[RValue]) -> Result<Value, DwError> {
+    let entries = object(args, 0)?;
+    let key = string(args, 1)?;
+    Ok(Value::Bool(entries.iter().any(|(name, _)| name == &key)))
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {
