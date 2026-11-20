@@ -1747,6 +1747,42 @@ impl Function {
         "Reports whether an object contains a key."
     );
     index_function!(
+        EXTRA_COMMON_PARSE_INT,
+        "dw::extra::Common",
+        "parseInt",
+        "Parses leading integer digits in a given radix."
+    );
+    index_function!(
+        EXTRA_COMMON_PARSE_FLOAT,
+        "dw::extra::Common",
+        "parseFloat",
+        "Parses a leading decimal number."
+    );
+    index_function!(
+        EXTRA_COMMON_TO_FIXED,
+        "dw::extra::Common",
+        "toFixed",
+        "Formats a number with a fixed number of decimals."
+    );
+    index_function!(
+        EXTRA_COMMON_CLAMP,
+        "dw::extra::Common",
+        "clamp",
+        "Restricts a number to an inclusive range."
+    );
+    index_function!(
+        EXTRA_COMMON_TRUNC,
+        "dw::extra::Common",
+        "trunc",
+        "Returns the integer part toward zero."
+    );
+    index_function!(
+        EXTRA_COMMON_SIGN,
+        "dw::extra::Common",
+        "sign",
+        "Returns negative one, zero, or one."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2046,6 +2082,12 @@ impl Function {
         Self::EXTRA_COMMON_PICK,
         Self::EXTRA_COMMON_OMIT,
         Self::EXTRA_COMMON_HAS_OWN,
+        Self::EXTRA_COMMON_PARSE_INT,
+        Self::EXTRA_COMMON_PARSE_FLOAT,
+        Self::EXTRA_COMMON_TO_FIXED,
+        Self::EXTRA_COMMON_CLAMP,
+        Self::EXTRA_COMMON_TRUNC,
+        Self::EXTRA_COMMON_SIGN,
         Self::DIFF_DIFF,
     ];
 }

@@ -306,6 +306,12 @@ const NAMES: &[&str] = &[
     "pick",
     "omit",
     "hasOwn",
+    "parseInt",
+    "parseFloat",
+    "toFixed",
+    "clamp",
+    "trunc",
+    "sign",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -340,6 +346,12 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("pick", "pick"),
             ("omit", "omit"),
             ("hasOwn", "hasOwn"),
+            ("parseInt", "parseInt"),
+            ("parseFloat", "parseFloat"),
+            ("toFixed", "toFixed"),
+            ("clamp", "clamp"),
+            ("trunc", "trunc"),
+            ("sign", "sign"),
         ],
         _ => &[],
     }
@@ -582,6 +594,12 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "pick" => extra_pick(args),
         "omit" => extra_omit(args),
         "hasOwn" => extra_has_own(args),
+        "parseInt" => extra_parse_int(args),
+        "parseFloat" => extra_parse_float(args),
+        "toFixed" => extra_to_fixed(args),
+        "clamp" => extra_clamp(args),
+        "trunc" => extra_trunc(args),
+        "sign" => extra_sign(args),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -4833,6 +4851,171 @@ fn extra_has_own(args: &[RValue]) -> Result<Value, DwError> {
     let entries = object(args, 0)?;
     let key = string(args, 1)?;
     Ok(Value::Bool(entries.iter().any(|(name, _)| name == &key)))
+}
+
+fn extra_parse_int(args: &[RValue]) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let radix = if args.len() > 1 {
+        let value = number(args, 1)?;
+        value
+            .to_i64()
+            .filter(|radix| (2..=36).contains(radix))
+            .ok_or_else(|| DwError::new("parseInt radix must be an integer from 2 to 36"))?
+    } else {
+        10
+    };
+    let mut chars = text.trim_start().chars().peekable();
+    let mut negative = false;
+    if let Some(sign) = chars.peek() {
+        match sign {
+            '+' => {
+                chars.next();
+            }
+            '-' => {
+                negative = true;
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    let mut digits = String::new();
+    for character in chars {
+        match character.to_digit(radix as u32) {
+            Some(digit) => digits.push(char::from_digit(digit, radix as u32).unwrap_or('0')),
+            None => break,
+        }
+    }
+    if digits.is_empty() {
+        return Ok(Value::Null);
+    }
+    let coefficient = BigUint::parse_bytes(digits.as_bytes(), radix as u32)
+        .ok_or_else(|| DwError::new("invalid integer digits"))?;
+    let decimal = coefficient.to_str_radix(10);
+    let sign = if negative && digits.chars().any(|digit| digit != '0') {
+        "-"
+    } else {
+        ""
+    };
+    Number::parse(&format!("{sign}{decimal}"))
+        .map(Value::Number)
+        .ok_or_else(|| DwError::new("invalid integer"))
+}
+
+fn extra_number_prefix(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
+        index += 1;
+    }
+    let mut seen_digit = false;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        seen_digit = true;
+        index += 1;
+    }
+    if index < bytes.len() && bytes[index] == b'.' {
+        index += 1;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            seen_digit = true;
+            index += 1;
+        }
+    }
+    if !seen_digit {
+        return None;
+    }
+    if index < bytes.len() && (bytes[index] == b'e' || bytes[index] == b'E') {
+        let mut exponent = index + 1;
+        if exponent < bytes.len() && (bytes[exponent] == b'+' || bytes[exponent] == b'-') {
+            exponent += 1;
+        }
+        let digits_start = exponent;
+        while exponent < bytes.len() && bytes[exponent].is_ascii_digit() {
+            exponent += 1;
+        }
+        if exponent > digits_start {
+            index = exponent;
+        }
+    }
+    Some(&text[..index])
+}
+
+fn extra_parse_float(args: &[RValue]) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let trimmed = text.trim_start();
+    match extra_number_prefix(trimmed) {
+        Some(prefix) => Number::parse(prefix)
+            .map(Value::Number)
+            .ok_or_else(|| DwError::new("invalid number")),
+        None => Ok(Value::Null),
+    }
+}
+
+fn extra_to_fixed(args: &[RValue]) -> Result<Value, DwError> {
+    let value = number(args, 0)?;
+    let digits = if args.len() > 1 { integer(args, 1)? } else { 0 };
+    if !(0..=20).contains(&digits) {
+        return Err(DwError::new("toFixed digits must be from 0 to 20"));
+    }
+    let factor = Number::parse(&format!("1{}", "0".repeat(digits as usize)))
+        .ok_or_else(|| DwError::new("invalid scale"))?;
+    let scaled = value.mul(&factor).round();
+    let mut text = scaled.to_plain_string();
+    if digits == 0 {
+        return Ok(Value::String(text));
+    }
+    let negative = text.starts_with('-');
+    if negative {
+        text.remove(0);
+    }
+    let width = digits as usize + 1;
+    if text.len() < width {
+        text = format!("{}{}", "0".repeat(width - text.len()), text);
+    }
+    let split = text.len() - digits as usize;
+    let mut out = String::new();
+    if negative {
+        out.push('-');
+    }
+    out.push_str(&text[..split]);
+    out.push('.');
+    out.push_str(&text[split..]);
+    Ok(Value::String(out))
+}
+
+fn extra_clamp(args: &[RValue]) -> Result<Value, DwError> {
+    let value = number(args, 0)?;
+    let minimum = number(args, 1)?;
+    let maximum = number(args, 2)?;
+    if minimum > maximum {
+        return Err(DwError::new("clamp minimum must not exceed maximum"));
+    }
+    if value < minimum {
+        Ok(Value::Number(minimum))
+    } else if value > maximum {
+        Ok(Value::Number(maximum))
+    } else {
+        Ok(Value::Number(value))
+    }
+}
+
+fn extra_trunc(args: &[RValue]) -> Result<Value, DwError> {
+    let value = number(args, 0)?;
+    Ok(Value::Number(if value.is_negative() {
+        value.ceil()
+    } else {
+        value.floor()
+    }))
+}
+
+fn extra_sign(args: &[RValue]) -> Result<Value, DwError> {
+    let value = number(args, 0)?;
+    let sign = if value.is_zero() {
+        0
+    } else if value.is_negative() {
+        -1
+    } else {
+        1
+    };
+    Ok(Value::Number(Number::from_i64(sign)))
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {
