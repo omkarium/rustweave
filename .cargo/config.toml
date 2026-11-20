@@ -1,0 +1,2 @@
+[patch.crates-io]
+rustweave-core = { path = "crates/rustweave-core" }
