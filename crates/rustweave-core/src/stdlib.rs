@@ -4698,7 +4698,7 @@ fn extra_sorted(args: &[RValue]) -> Result<Value, DwError> {
     let mut keyed = Vec::with_capacity(items.len());
     for item in items {
         let key = match key_function {
-            Some(function) => call_simple(function, &[item.clone()])?,
+            Some(function) => call_simple(function, std::slice::from_ref(&item))?,
             None => item.clone(),
         };
         keyed.push((key, item));
