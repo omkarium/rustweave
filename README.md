@@ -55,31 +55,31 @@ rustweave '[1, 2, 3] map $ * 2'
 ]
 ```
 
-Bind a JSON file to a name and transform it. Given `payload.json`:
+Bind a JSON file to a name and transform it. Given `readings.json`:
 
 ```json
 {
-  "orders": [
-    { "id": 1, "customer": "ana", "total": 120.50 },
-    { "id": 2, "customer": "ben", "total": 80 }
+  "devices": [
+    { "code": "d1", "zone": "north", "reading": 21.50 },
+    { "code": "d2", "zone": "south", "reading": 18 }
   ]
 }
 ```
 
 ```bash
-rustweave -i payload=payload.json \
-  'payload.orders map { id: $.id, total: $.total }'
+rustweave -i feed=readings.json \
+  'feed.devices map { code: $.code, reading: $.reading }'
 ```
 
 ```json
 [
   {
-    "id": 1,
-    "total": 120.5
+    "code": "d1",
+    "reading": 21.5
   },
   {
-    "id": 2,
-    "total": 80
+    "code": "d2",
+    "reading": 18
   }
 ]
 ```
@@ -90,20 +90,20 @@ Put a full script in a file when the expression grows. Given `transform.dwl`:
 %dw 2.0
 output application/json
 ---
-payload.orders
-  filter $.total > 100
-  map { id: $.id, customer: $.customer }
+feed.devices
+  filter $.reading > 20
+  map { code: $.code, zone: $.zone }
 ```
 
 ```bash
-rustweave -i payload=payload.json -f transform.dwl
+rustweave -i feed=readings.json -f transform.dwl
 ```
 
 ```json
 [
   {
-    "id": 1,
-    "customer": "ana"
+    "code": "d1",
+    "zone": "north"
   }
 ]
 ```
@@ -111,7 +111,7 @@ rustweave -i payload=payload.json -f transform.dwl
 `rustweave run ...` is equivalent when your tooling always emits a leading `run`:
 
 ```bash
-rustweave run -i payload=payload.json -f transform.dwl
+rustweave run -i feed=readings.json -f transform.dwl
 ```
 
 On failure the command writes `[ERROR] message` to stderr and exits with status 1:
@@ -204,18 +204,18 @@ import * from dw::core::Periods
 output application/json
 ---
 {
-  day: date({year: 2020, month: 10, day: 6}),
-  startOfMonth: atBeginningOfMonth(|2020-10-06|),
-  tomorrow: |2020-10-05T20:22:34Z| + days(1),
-  leap: isLeapYear(|2020-01-01|)
+  day: date({year: 2021, month: 2, day: 14}),
+  startOfMonth: atBeginningOfMonth(|2021-02-14|),
+  tomorrow: |2021-02-14T11:30:00Z| + days(1),
+  leap: isLeapYear(|2024-01-01|)
 }
 ```
 
 ```json
 {
-  "day": "2020-10-06",
-  "startOfMonth": "2020-10-01",
-  "tomorrow": "2020-10-06T20:22:34Z",
+  "day": "2021-02-14",
+  "startOfMonth": "2021-02-01",
+  "tomorrow": "2021-02-15T11:30:00Z",
   "leap": true
 }
 ```
@@ -227,17 +227,17 @@ Transform every leaf in a tree:
 import * from dw::util::Tree
 output application/json
 ---
-{ user: { name: "mariano", tags: ["one", "two"] } } mapLeafValues (value, path) ->
+{ catalog: { title: "tools", labels: ["steel", "wood"] } } mapLeafValues (value, path) ->
   if (value is String) upper(value) else value
 ```
 
 ```json
 {
-  "user": {
-    "name": "MARIANO",
-    "tags": [
-      "ONE",
-      "TWO"
+  "catalog": {
+    "title": "TOOLS",
+    "labels": [
+      "STEEL",
+      "WOOD"
     ]
   }
 }
@@ -250,18 +250,18 @@ Read a JSON string and write a compact JSON string:
 output application/json
 ---
 {
-  parsed: read("{\"id\":1,\"name\":\"ana\"}", "application/json"),
-  encoded: write({id: 1, name: "ana"}, "application/json", {indent: false})
+  parsed: read("{\"sku\":\"g-17\",\"count\":4}", "application/json"),
+  encoded: write({sku: "g-17", count: 4}, "application/json", {indent: false})
 }
 ```
 
 ```json
 {
   "parsed": {
-    "id": 1,
-    "name": "ana"
+    "sku": "g-17",
+    "count": 4
   },
-  "encoded": "{\"id\": 1,\"name\": \"ana\"}"
+  "encoded": "{\"sku\": \"g-17\",\"count\": 4}"
 }
 ```
 
@@ -273,17 +273,17 @@ import * from dw::core::Binaries
 output application/json
 ---
 {
-  hex: toHex(fromHex("4D756C65")),
-  base64: toBase64(fromHex("4D756C65")),
-  literalHex: toHex(|4D756C65|)
+  hex: toHex(fromHex("54696465")),
+  base64: toBase64(fromHex("54696465")),
+  literalHex: toHex(|54696465|)
 }
 ```
 
 ```json
 {
-  "hex": "4D756C65",
-  "base64": "TXVsZQ==",
-  "literalHex": "4D756C65"
+  "hex": "54696465",
+  "base64": "VGlkZQ==",
+  "literalHex": "54696465"
 }
 ```
 

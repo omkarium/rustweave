@@ -40,8 +40,8 @@
 //! Bind a JSON file:
 //!
 //! ```console
-//! $ rustweave -i payload=payload.json \
-//!     'payload.orders map { id: $.id, total: $.total }'
+//! $ rustweave -i feed=readings.json \
+//!     'feed.devices map { code: $.code, reading: $.reading }'
 //! ```
 //!
 //! Run a script file with a header:
@@ -50,13 +50,13 @@
 //! %dw 2.0
 //! output application/json
 //! ---
-//! payload.orders
-//!   filter $.total > 100
-//!   map { id: $.id, customer: $.customer }
+//! feed.devices
+//!   filter $.reading > 20
+//!   map { code: $.code, zone: $.zone }
 //! ```
 //!
 //! ```console
-//! $ rustweave -i payload=payload.json -f transform.dwl
+//! $ rustweave -i feed=readings.json -f transform.dwl
 //! ```
 //!
 //! `rustweave run ...` is equivalent when your tooling always emits a leading `run`.

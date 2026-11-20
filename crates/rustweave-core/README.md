@@ -23,10 +23,10 @@ rustweave-core = "0.2"
 ```rust
 fn main() -> Result<(), rustweave_core::DwError> {
     let output = rustweave_core::run(
-        "payload.orders map { id: $.id, total: $.total }",
+        "feed.devices map { code: $.code, reading: $.reading }",
         &[(
-            "payload",
-            r#"{"orders":[{"id":1,"total":120.50},{"id":2,"total":80}]}"#,
+            "feed",
+            r#"{"devices":[{"code":"d1","reading":21.5},{"code":"d2","reading":18}]}"#,
         )],
     )?;
     println!("{output}");
@@ -37,12 +37,12 @@ fn main() -> Result<(), rustweave_core::DwError> {
 ```json
 [
   {
-    "id": 1,
-    "total": 120.5
+    "code": "d1",
+    "reading": 21.5
   },
   {
-    "id": 2,
-    "total": 80
+    "code": "d2",
+    "reading": 18
   }
 ]
 ```
@@ -70,15 +70,16 @@ import * from dw::core::Arrays
 output application/json
 ---
 {
-  total: payload.orders sumBy $.total,
-  paid: payload.orders filter $.paid map $.customer,
-  byRegion: payload.orders groupBy $.region
+  total: feed.devices sumBy $.reading,
+  active: feed.devices filter $.active map $.code,
+  byZone: feed.devices groupBy $.zone
 }"#,
     &[(
-        "payload",
-        r#"{"orders":[
-            {"customer":"ana","region":"north","total":120.5,"paid":true},
-            {"customer":"ben","region":"south","total":80,"paid":false}
+        "feed",
+        r#"{"devices":[
+            {"code":"d1","zone":"north","reading":21.5,"active":true},
+            {"code":"d2","zone":"south","reading":18,"active":false},
+            {"code":"d3","zone":"north","reading":9.75,"active":true}
         ]}"#,
     )],
 )
@@ -88,25 +89,32 @@ println!("{output}");
 
 ```json
 {
-  "total": 200.5,
-  "paid": [
-    "ana"
+  "total": 49.25,
+  "active": [
+    "d1",
+    "d3"
   ],
-  "byRegion": {
+  "byZone": {
     "north": [
       {
-        "customer": "ana",
-        "region": "north",
-        "total": 120.5,
-        "paid": true
+        "code": "d1",
+        "zone": "north",
+        "reading": 21.5,
+        "active": true
+      },
+      {
+        "code": "d3",
+        "zone": "north",
+        "reading": 9.75,
+        "active": true
       }
     ],
     "south": [
       {
-        "customer": "ben",
-        "region": "south",
-        "total": 80,
-        "paid": false
+        "code": "d2",
+        "zone": "south",
+        "reading": 18,
+        "active": false
       }
     ]
   }
@@ -122,14 +130,14 @@ ranges, string interpolation, array cons, dynamic keys, trailing commas, `do` bl
 ```rust
 let output = rustweave_core::run(
     r#"do {
-         var status = "paid"
+         var state = "shipped"
          ---
-         { label: status match { case "paid" -> "Paid" else -> "Unknown" } }
+         { label: state match { case "shipped" -> "Shipped" else -> "Unknown" } }
        }"#,
     &[],
 )
 .unwrap();
-assert_eq!(output, "{\n  \"label\": \"Paid\"\n}");
+assert_eq!(output, "{\n  \"label\": \"Shipped\"\n}");
 ```
 
 ## Reusable interpreter and values

@@ -12,10 +12,10 @@
 //!
 //! ```
 //! let output = rustweave_core::run(
-//!     "payload.orders map { id: $.id, total: $.total }",
-//!     &[("payload", r#"{"orders":[{"id":1,"total":120.50},{"id":2,"total":80}]}"#)],
+//!     "feed.devices map { code: $.code, reading: $.reading }",
+//!     &[("feed", r#"{"devices":[{"code":"d1","reading":21.5},{"code":"d2","reading":18}]}"#)],
 //! )?;
-//! assert!(output.contains("\"total\": 120.5"));
+//! assert!(output.contains("\"reading\": 21.5"));
 //! # Ok::<(), rustweave_core::DwError>(())
 //! ```
 //!
@@ -40,13 +40,14 @@
 //! output application/json
 //! ---
 //! {
-//!   total: payload.orders sumBy $.total,
-//!   paid: payload.orders filter $.paid map $.customer,
-//!   byRegion: payload.orders groupBy $.region
+//!   total: feed.devices sumBy $.reading,
+//!   active: feed.devices filter $.active map $.code,
+//!   byZone: feed.devices groupBy $.zone
 //! }"#,
-//!     &[("payload", r#"{"orders":[
-//!         {"customer":"ana","region":"north","total":120.5,"paid":true},
-//!         {"customer":"ben","region":"south","total":80,"paid":false}
+//!     &[("feed", r#"{"devices":[
+//!         {"code":"d1","zone":"north","reading":21.5,"active":true},
+//!         {"code":"d2","zone":"south","reading":18,"active":false},
+//!         {"code":"d3","zone":"north","reading":9.75,"active":true}
 //!     ]}"#)],
 //! )?;
 //! println!("{output}");
@@ -62,13 +63,13 @@
 //! ```
 //! let output = rustweave_core::run(
 //!     r#"do {
-//!          var status = "paid"
+//!          var state = "shipped"
 //!          ---
-//!          { label: status match { case "paid" -> "Paid" else -> "Unknown" } }
+//!          { label: state match { case "shipped" -> "Shipped" else -> "Unknown" } }
 //!        }"#,
 //!     &[],
 //! )?;
-//! assert_eq!(output, "{\n  \"label\": \"Paid\"\n}");
+//! assert_eq!(output, "{\n  \"label\": \"Shipped\"\n}");
 //! # Ok::<(), rustweave_core::DwError>(())
 //! ```
 //!
@@ -134,7 +135,6 @@
 //!
 //! - XML, YAML, CSV, Multipart, Crypto, data formats, and timers.
 //! - `dw::Runtime` (`try`/`orElse`/`fail`) and value metadata.
-//! - Full streaming and lazy evaluation.
 //! - Lazy or streaming evaluation. This engine evaluates eagerly.
 //! - Object spread syntax.
 //! - The exact text of error messages is not part of the public contract, and regex behaviour

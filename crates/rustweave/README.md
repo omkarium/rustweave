@@ -39,31 +39,31 @@ rustweave '[1, 2, 3] map $ * 2'
 ]
 ```
 
-Bind a JSON file to a name and transform it. Given `payload.json`:
+Bind a JSON file to a name and transform it. Given `readings.json`:
 
 ```json
 {
-  "orders": [
-    { "id": 1, "customer": "ana", "total": 120.50 },
-    { "id": 2, "customer": "ben", "total": 80 }
+  "devices": [
+    { "code": "d1", "zone": "north", "reading": 21.50 },
+    { "code": "d2", "zone": "south", "reading": 18 }
   ]
 }
 ```
 
 ```bash
-rustweave -i payload=payload.json \
-  'payload.orders map { id: $.id, total: $.total }'
+rustweave -i feed=readings.json \
+  'feed.devices map { code: $.code, reading: $.reading }'
 ```
 
 ```json
 [
   {
-    "id": 1,
-    "total": 120.5
+    "code": "d1",
+    "reading": 21.5
   },
   {
-    "id": 2,
-    "total": 80
+    "code": "d2",
+    "reading": 18
   }
 ]
 ```
@@ -74,20 +74,20 @@ Put a full script in a file when the expression grows. Given `transform.dwl`:
 %dw 2.0
 output application/json
 ---
-payload.orders
-  filter $.total > 100
-  map { id: $.id, customer: $.customer }
+feed.devices
+  filter $.reading > 20
+  map { code: $.code, zone: $.zone }
 ```
 
 ```bash
-rustweave -i payload=payload.json -f transform.dwl
+rustweave -i feed=readings.json -f transform.dwl
 ```
 
 ```json
 [
   {
-    "id": 1,
-    "customer": "ana"
+    "code": "d1",
+    "zone": "north"
   }
 ]
 ```
@@ -95,7 +95,7 @@ rustweave -i payload=payload.json -f transform.dwl
 `rustweave run ...` is equivalent when your tooling always emits a leading `run`:
 
 ```bash
-rustweave run -i payload=payload.json -f transform.dwl
+rustweave run -i feed=readings.json -f transform.dwl
 ```
 
 On failure the command writes `[ERROR] message` to stderr and exits with status 1:

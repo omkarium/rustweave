@@ -1174,7 +1174,7 @@ impl Function {
         TYPES_IS_ANY_TYPE,
         "dw::core::Types",
         "isAnyType",
-        "Reports whether a type is a Any type."
+        "Reports whether a type is the Any type."
     );
     catalog_function!(
         TYPES_IS_ARRAY_TYPE,
@@ -1216,7 +1216,7 @@ impl Function {
         TYPES_IS_INTERSECTION_TYPE,
         "dw::core::Types",
         "isIntersectionType",
-        "Reports whether a type is a Intersection type."
+        "Reports whether a type is an intersection type."
     );
     catalog_function!(
         TYPES_IS_KEY_TYPE,
@@ -1288,7 +1288,7 @@ impl Function {
         TYPES_IS_REFERENCE_TYPE,
         "dw::core::Types",
         "isReferenceType",
-        "Reports whether a type is a Reference type."
+        "Reports whether a type is a reference type."
     );
     catalog_function!(
         TYPES_IS_REGEX_TYPE,
@@ -1324,13 +1324,13 @@ impl Function {
         TYPES_IS_UNION_TYPE,
         "dw::core::Types",
         "isUnionType",
-        "Reports whether a type is a Union type."
+        "Reports whether a type is a union type."
     );
     catalog_function!(
         TYPES_IS_URI_TYPE,
         "dw::core::Types",
         "isUriType",
-        "Reports whether a type is a Uri type."
+        "Reports whether a type is a URI type."
     );
     catalog_function!(
         TYPES_LITERAL_VALUE_OF,
