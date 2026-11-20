@@ -47,8 +47,8 @@ fn main() -> Result<(), rustweave_core::DwError> {
 ]
 ```
 
-Inputs are named JSON texts. Each name becomes a variable in the script. The result is
-pretty-printed JSON.
+Inputs are named JSON texts. Each name becomes a variable in the script. The default output is
+pretty-printed JSON; the `output` header can select CSV, XML, or YAML.
 
 Arithmetic is exact decimal arithmetic, and division keeps 34 significant digits:
 
@@ -169,7 +169,7 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 ## What is supported
 
 - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
-- JSON input and pretty-printed JSON output.
+- JSON, CSV, XML, YAML, text, and binary input and output, with reader and writer options.
 - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, regex literals and ranges.
 - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
@@ -189,7 +189,7 @@ See the repository README for the full function list and CLI examples.
 
 ## What is not supported yet
 
-- XML, YAML, CSV, Multipart, Crypto, data formats, and timers.
+- Multipart, Crypto, other data formats, and timers.
 - `dw::Runtime` (`try`/`orElse`/`fail`) is out of scope.
 - `using` is not supported.
 - Value metadata.

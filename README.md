@@ -146,7 +146,7 @@ fn main() -> Result<(), rustweave_core::DwError> {
 ```
 
 `rustweave_core::run(script, inputs)` takes a script and a list of named JSON texts. Each input
-name becomes a variable in the script. The result is pretty-printed JSON text.
+name becomes a variable in the script. The default result is pretty-printed JSON text.
 
 The crate also exposes:
 
@@ -333,6 +333,86 @@ output application/json
 }
 ```
 
+## Structured formats
+
+CSV, XML, and YAML are available through `read`, `write`, `readUrl`, and the `output` header.
+MIME matching ignores case and trims parameters such as `; charset=UTF-8`:
+
+- CSV: `application/csv`, `text/csv`
+- XML: `application/xml`, `text/xml`
+- YAML: `application/yaml`, `application/x-yaml`, `text/yaml`
+
+CSV reader and writer options include `header`, `separator`, `quote`, `escape`,
+`recordSeparator`, `skipEmptyLine`, and `nullValue`. XML options include `attributePrefix`,
+`textKey`, `namespaceSeparator`, `writeDeclaration`, and `indent`. YAML options include `indent`
+and `writeDocumentStart`. The same options can be supplied in the `output` header.
+
+Read quoted CSV fields and write XML and YAML values:
+
+```text
+%dw 2.0
+output application/json
+---
+{
+  rows: read("code,note\nG-17,\"calm, grey\"\n", "application/csv"),
+  xml: write({fleet: {"@id": "f1", name: "North Star", part: ["hull", "sail"]}}, "application/xml"),
+  yaml: write({ship: {name: "Kite", tags: ["calm", "sea"]}}, "application/yaml")
+}
+```
+
+Write CSV directly with header properties:
+
+```text
+%dw 2.0
+output application/csv header=false, separator=";"
+---
+[{code: "G-17", note: "calm, grey"}, {code: "G-18", note: "dry dock"}]
+```
+
+```text
+G-17;calm, grey
+G-18;dry dock
+```
+
+Write an indented XML document:
+
+```text
+%dw 2.0
+output application/xml indent=true
+---
+{fleet: {"@id": "f1", name: "North Star", part: ["hull", "sail"]}}
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<fleet id="f1">
+  <name>North Star</name>
+  <part>hull</part>
+  <part>sail</part>
+</fleet>
+```
+
+Write a YAML document:
+
+```text
+%dw 2.0
+output application/yaml
+---
+{ship: {name: "Kite", tags: ["calm", "sea"]}, empty: null}
+```
+
+```yaml
+ship:
+  name: Kite
+  tags:
+    - calm
+    - sea
+empty: null
+```
+
+`readUrl` selects a format from `.json`, `.csv`, `.xml`, `.yaml`, `.yml`, and falls back to
+`text/plain` for other extensions.
+
 ## Supported functions
 
 ### dw::Core
@@ -440,10 +520,11 @@ of the public contract.
 
 ## Scope
 
-The current release targets JSON output and the expression and standard-library surface listed
-above, including date/time, period, binary, type, tree, coercion, value, math, URL, and diff
-helpers. XML, YAML, CSV, Multipart, Crypto, data formats, timers, value metadata, and object
-spread are outside the current scope. `dw::Runtime` is out of scope, and `using` is not supported.
+The current release targets JSON, CSV, XML, and YAML output and the expression and
+standard-library surface listed above, including date/time, period, binary, type, tree, coercion,
+value, math, URL, and diff helpers. Multipart, Crypto, other data formats, timers, value metadata,
+and object spread are outside the current scope. `dw::Runtime` is out of scope, and `using` is not
+supported.
 
 ## Development
 

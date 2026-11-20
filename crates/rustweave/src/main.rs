@@ -2,7 +2,7 @@
 //! Command-line interface for the `rustweave` expression engine.
 //!
 //! `rustweave` reads a DataWeave-compatible expression or script, evaluates it with optional JSON
-//! inputs, and prints pretty-printed JSON. It is a thin wrapper around the
+//! inputs, and prints the result in the declared output format. It is a thin wrapper around the
 //! [`rustweave_core`](https://crates.io/crates/rustweave-core) crate; the language and
 //! standard-library surface is documented there.
 //!
@@ -63,14 +63,14 @@
 //!
 //! # Exit status
 //!
-//! - `0` on success; the JSON result is printed to stdout.
+//! - `0` on success; the formatted result is printed to stdout.
 //! - `1` on an input, parse, or evaluation error; `[ERROR] message` is printed to stderr.
 //!
 //! # Scope
 //!
-//! The CLI targets JSON output. The parser, evaluator, exact decimal arithmetic, standard library,
+//! The CLI supports JSON, CSV, XML, YAML, text, and binary output. The parser, evaluator, exact decimal arithmetic, standard library,
 //! and supported/unsupported feature list are provided by `rustweave-core`; see that crate's
-//! documentation. XML, YAML, CSV, Multipart, Crypto, data formats, timers, and `dw::Runtime` are
+//! documentation. Multipart, Crypto, other data formats, timers, and `dw::Runtime` are
 //! not supported yet.
 //!
 //! # Trademarks

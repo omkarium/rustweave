@@ -109,14 +109,14 @@ $ echo $?
 
 ## Exit status
 
-- `0` on success; the JSON result is printed to stdout.
+- `0` on success; the formatted result is printed to stdout.
 - `1` on an input, parse, or evaluation error; `[ERROR] message` is printed to stderr.
 
 ## Scope
 
-The CLI targets JSON output. The parser, evaluator, exact decimal arithmetic, standard library, and
+The CLI supports JSON, CSV, XML, YAML, text, and binary output. The parser, evaluator, exact decimal arithmetic, standard library, and
 supported/unsupported feature list are provided by the `rustweave-core` crate; see its
-documentation. XML, YAML, CSV, Multipart, Crypto, data formats, and timers are not supported yet.
+documentation. Multipart, Crypto, other data formats, and timers are not supported yet.
 `dw::Runtime` is out of scope, and `using` is not supported.
 
 The engine is provided by the `rustweave-core` crate.
