@@ -294,6 +294,13 @@ const NAMES: &[&str] = &[
     "nameOf",
     "objectFields",
     "unionItems",
+    "enumerate",
+    "range",
+    "sorted",
+    "reversed",
+    "chunk",
+    "compact",
+    "unique",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -314,6 +321,15 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
         "dw::core::Types" => &[
             ("isArrayType", "typesIsArrayType"),
             ("isObjectType", "typesIsObjectType"),
+        ],
+        "dw::extra::Common" => &[
+            ("enumerate", "enumerate"),
+            ("range", "range"),
+            ("sorted", "sorted"),
+            ("reversed", "reversed"),
+            ("chunk", "chunk"),
+            ("compact", "compact"),
+            ("unique", "unique"),
         ],
         _ => &[],
     }
@@ -340,7 +356,7 @@ pub fn lambda_positions(name: &str) -> &'static [usize] {
         | "dropWhile" | "partition" | "firstWith" | "splitWhere" | "everyEntry" | "someEntry"
         | "countCharactersBy" | "everyCharacter" | "someCharacter" | "mapString"
         | "substringBy" | "filterArrayLeafs" | "filterObjectLeafs" | "filterTree"
-        | "mapLeafValues" | "nodeExists" | "sort" => &[1],
+        | "mapLeafValues" | "nodeExists" | "sort" | "sorted" => &[1],
         "update" | "mask" => &[2],
         "join" | "leftJoin" | "outerJoin" => &[2, 3],
         _ => &[],
@@ -544,6 +560,13 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "minusMinus" => {
             crate::eval::difference_values(value(args, 0)?.clone(), value(args, 1)?.clone())
         }
+        "enumerate" => extra_enumerate(args),
+        "range" => extra_range(args),
+        "sorted" => extra_sorted(args),
+        "reversed" => extra_reversed(args),
+        "chunk" => extra_chunk(args),
+        "compact" => extra_compact(args),
+        "unique" => extra_unique(args),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -4509,6 +4532,166 @@ fn decode_uri(text: &str, component: bool) -> String {
         index += 1;
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+fn extra_enumerate(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let start = if args.len() > 1 { integer(args, 1)? } else { 0 };
+    let mut out = Vec::with_capacity(items.len());
+    for (offset, item) in items.into_iter().enumerate() {
+        let index = start
+            .checked_add(offset as i64)
+            .ok_or_else(|| DwError::new("enumerate index overflow"))?;
+        out.push(Value::Object(vec![
+            ("index".to_string(), Value::Number(Number::from_i64(index))),
+            ("value".to_string(), item),
+        ]));
+    }
+    Ok(Value::Array(out))
+}
+
+fn extra_range(args: &[RValue]) -> Result<Value, DwError> {
+    let (start, stop, step) = match args.len() {
+        1 => (0, integer(args, 0)?, 1),
+        2 => (integer(args, 0)?, integer(args, 1)?, 1),
+        _ => (integer(args, 0)?, integer(args, 1)?, integer(args, 2)?),
+    };
+    if step == 0 {
+        return Err(DwError::new("range step must not be zero"));
+    }
+    let mut out = Vec::new();
+    let mut current = start;
+    if step > 0 {
+        while current < stop {
+            out.push(Value::Number(Number::from_i64(current)));
+            match current.checked_add(step) {
+                Some(next) => current = next,
+                None => break,
+            }
+        }
+    } else {
+        while current > stop {
+            out.push(Value::Number(Number::from_i64(current)));
+            match current.checked_add(step) {
+                Some(next) => current = next,
+                None => break,
+            }
+        }
+    }
+    Ok(Value::Array(out))
+}
+
+fn extra_compare_keys(left: &Value, right: &Value, reverse: bool) -> Result<Ordering, DwError> {
+    let left = left.unwrap_formatted();
+    let right = right.unwrap_formatted();
+    match (left.is_null(), right.is_null()) {
+        (true, true) => Ok(Ordering::Equal),
+        (true, _) => Ok(if reverse {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }),
+        (_, true) => Ok(if reverse {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        }),
+        _ => {
+            let ordering = match (left, right) {
+                (Value::Number(a), Value::Number(b)) => Some(a.cmp(b)),
+                (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
+                (Value::Bool(a), Value::Bool(b)) => Some(a.cmp(b)),
+                _ => None,
+            }
+            .ok_or_else(|| DwError::new("sorted values are not comparable"))?;
+            Ok(if reverse {
+                ordering.reverse()
+            } else {
+                ordering
+            })
+        }
+    }
+}
+
+fn extra_sorted(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let key_function = if args.len() > 1 {
+        Some(function(args, 1)?)
+    } else {
+        None
+    };
+    let reverse = match args.get(2) {
+        Some(RValue::Val(Value::Bool(value))) => *value,
+        Some(_) => return Err(DwError::new("sorted reverse must be a Boolean")),
+        None => false,
+    };
+    let mut keyed = Vec::with_capacity(items.len());
+    for item in items {
+        let key = match key_function {
+            Some(function) => call_simple(function, &[item.clone()])?,
+            None => item.clone(),
+        };
+        keyed.push((key, item));
+    }
+    let mut error = None;
+    keyed.sort_by(|(left, _), (right, _)| {
+        if error.is_some() {
+            return Ordering::Equal;
+        }
+        match extra_compare_keys(left, right, reverse) {
+            Ok(ordering) => ordering,
+            Err(failure) => {
+                error = Some(failure);
+                Ordering::Equal
+            }
+        }
+    });
+    if let Some(failure) = error {
+        return Err(failure);
+    }
+    Ok(Value::Array(
+        keyed.into_iter().map(|(_, item)| item).collect(),
+    ))
+}
+
+fn extra_reversed(args: &[RValue]) -> Result<Value, DwError> {
+    let mut items = array(args, 0)?;
+    items.reverse();
+    Ok(Value::Array(items))
+}
+
+fn extra_chunk(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let size = integer(args, 1)?;
+    if size <= 0 {
+        return Err(DwError::new("chunk size must be a positive integer"));
+    }
+    let chunks = items
+        .chunks(size as usize)
+        .map(|chunk| Value::Array(chunk.to_vec()))
+        .collect();
+    Ok(Value::Array(chunks))
+}
+
+fn extra_compact(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    Ok(Value::Array(
+        items.into_iter().filter(|item| !item.is_null()).collect(),
+    ))
+}
+
+fn extra_unique(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let mut seen: Vec<Value> = Vec::new();
+    let mut out = Vec::new();
+    for item in items {
+        let normalized = item.unwrap_formatted().clone();
+        if !seen.iter().any(|value| value == &normalized) {
+            seen.push(normalized);
+            out.push(item);
+        }
+    }
+    Ok(Value::Array(out))
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {
