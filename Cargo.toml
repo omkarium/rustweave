@@ -21,9 +21,12 @@ categories = [
 
 [workspace.dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+csv = "=1.4.0"
 num-bigint = "0.4"
 num-traits = "0.2"
+quick-xml = "=0.39.4"
 regex = "1"
+yaml-rust2 = "=0.11.1"
 rustweave-core = { path = "crates/rustweave-core", version = "0.3.0" }
 
 # Integration-test binaries share helper modules, so helpers used by only some

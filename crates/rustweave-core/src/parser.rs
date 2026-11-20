@@ -5,6 +5,7 @@ use crate::ast::{BinOp, Expr, InterpSegment, Param, UnOp};
 use crate::error::DwError;
 use crate::lexer::{lex, InterpPart, Token};
 use crate::number::Number;
+use crate::value::Value;
 
 /// A named function declared in a script header.
 #[derive(Clone, Debug)]
@@ -30,6 +31,8 @@ pub enum HeaderItem {
 pub struct Script {
     pub items: Vec<HeaderItem>,
     pub imports: Vec<String>,
+    pub output: Option<String>,
+    pub output_options: Option<Value>,
     pub body: Expr,
 }
 
@@ -68,8 +71,16 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
 
     let mut items = Vec::new();
     let mut imports = Vec::new();
+    let mut output = None;
+    let mut output_options = None;
     for line in header_lines {
         let line = line.trim();
+        if let Some(rest) = line.strip_prefix("output ") {
+            let (mime, options) = parse_output_declaration(rest)?;
+            output = Some(mime);
+            output_options = options;
+            continue;
+        }
         if line.starts_with("import ") {
             if let Some((_, module)) = line.split_once(" from ") {
                 imports.push(module.trim().to_string());
@@ -117,8 +128,126 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
     Ok(Script {
         items,
         imports,
+        output,
+        output_options,
         body,
     })
+}
+
+fn parse_output_declaration(text: &str) -> Result<(String, Option<Value>), DwError> {
+    let mut chars = text.trim().char_indices().peekable();
+    let mut mime = String::new();
+    while let Some((_, character)) = chars.peek().copied() {
+        if character.is_whitespace() || character == ',' {
+            break;
+        }
+        mime.push(character);
+        chars.next();
+    }
+    if mime.is_empty() {
+        return Err(DwError::new("output declaration is missing a MIME type"));
+    }
+
+    let rest = chars
+        .peek()
+        .map(|(index, _)| &text[*index..])
+        .unwrap_or("")
+        .trim();
+    if rest.is_empty() {
+        return Ok((mime, None));
+    }
+
+    let mut entries = Vec::new();
+    let mut cursor = 0usize;
+    while cursor < rest.len() {
+        while cursor < rest.len() {
+            let character = rest[cursor..].chars().next().unwrap_or(' ');
+            if character.is_whitespace() || character == ',' {
+                cursor += character.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if cursor >= rest.len() {
+            break;
+        }
+        let key_start = cursor;
+        while cursor < rest.len() {
+            let character = rest[cursor..].chars().next().unwrap_or(' ');
+            if character == '=' || character.is_whitespace() || character == ',' {
+                break;
+            }
+            cursor += character.len_utf8();
+        }
+        let key = rest[key_start..cursor].trim();
+        if key.is_empty() {
+            return Err(DwError::new("invalid output property"));
+        }
+        while cursor < rest.len() {
+            let character = rest[cursor..].chars().next().unwrap_or(' ');
+            if character.is_whitespace() {
+                cursor += character.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if !rest[cursor..].starts_with('=') {
+            return Err(DwError::new(format!(
+                "output property '{key}' is missing a value"
+            )));
+        }
+        cursor += 1;
+        while cursor < rest.len() {
+            let character = rest[cursor..].chars().next().unwrap_or(' ');
+            if character.is_whitespace() {
+                cursor += character.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let value = if rest[cursor..].starts_with('"') || rest[cursor..].starts_with('\'') {
+            let quote = rest[cursor..].chars().next().unwrap_or('"');
+            cursor += quote.len_utf8();
+            let mut text = String::new();
+            let mut escaped = false;
+            while cursor < rest.len() {
+                let character = rest[cursor..].chars().next().unwrap_or(' ');
+                cursor += character.len_utf8();
+                if escaped {
+                    text.push(character);
+                    escaped = false;
+                } else if character == '\\' {
+                    escaped = true;
+                } else if character == quote {
+                    break;
+                } else {
+                    text.push(character);
+                }
+            }
+            Value::String(text)
+        } else {
+            let value_start = cursor;
+            while cursor < rest.len() {
+                let character = rest[cursor..].chars().next().unwrap_or(' ');
+                if character.is_whitespace() || character == ',' {
+                    break;
+                }
+                cursor += character.len_utf8();
+            }
+            let token = &rest[value_start..cursor];
+            match token {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                "null" => Value::Null,
+                other => match Number::parse(other) {
+                    Some(number) => Value::Number(number),
+                    None => Value::String(other.to_string()),
+                },
+            }
+        };
+        entries.push((key.to_string(), value));
+    }
+    Ok((mime, Some(Value::Object(entries))))
 }
 
 /// Splits `name = value` without splitting comparison operators.

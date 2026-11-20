@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! An independent Rust implementation of a DataWeave-compatible expression language.
 //!
-//! `rustweave_core` parses and evaluates DataWeave expressions and returns JSON. It is the engine
-//! behind the `rustweave` command-line crate. The evaluator is eager and supports exact decimal
-//! arithmetic, JSON inputs and outputs, arrays, objects, lambdas, `do` blocks, `match`
-//! expressions, regex literals, ranges, and a JSON-oriented standard library.
+//! `rustweave_core` parses and evaluates DataWeave expressions and returns text in the requested
+//! output format. It is the engine behind the `rustweave` command-line crate. The evaluator is
+//! eager and supports exact decimal arithmetic, structured inputs and outputs, arrays, objects,
+//! lambdas, `do` blocks, `match` expressions, regex literals, ranges, and a standard library.
 //!
 //! # Quick start
 //!
-//! [`run`] is the one-shot API. Inputs are named JSON texts and the result is pretty-printed JSON:
+//! [`run`] is the one-shot API. Inputs are named JSON texts and the default output is JSON:
 //!
 //! ```
 //! let output = rustweave_core::run(
@@ -121,7 +121,7 @@
 //! # What is supported
 //!
 //! - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
-//! - JSON input and pretty-printed JSON output.
+//! - JSON, CSV, XML, YAML, text, and binary input and output.
 //! - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, regex literals and ranges.
 //! - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
 //!   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
@@ -133,7 +133,7 @@
 //!
 //! # What is not supported yet
 //!
-//! - XML, YAML, CSV, Multipart, Crypto, data formats, and timers.
+//! - Multipart, Crypto, other data formats, and timers.
 //! - `dw::Runtime` (`try`/`orElse`/`fail`) and value metadata.
 //! - Lazy or streaming evaluation. This engine evaluates eagerly.
 //! - Object spread syntax.
@@ -167,6 +167,7 @@ pub mod json;
 mod ast;
 mod error;
 mod eval;
+mod formats;
 mod lexer;
 mod number;
 mod parser;
@@ -218,6 +219,14 @@ impl Interp {
     /// Returns [`DwError`] for invalid JSON, syntax errors, or evaluation
     /// errors such as unresolved names or bad operand types.
     pub fn eval(&self, script: &str, inputs: &[(&str, &str)]) -> Result<Value, DwError> {
+        self.eval_parsed(script, inputs).map(|(value, _, _)| value)
+    }
+
+    fn eval_parsed(
+        &self,
+        script: &str,
+        inputs: &[(&str, &str)],
+    ) -> Result<(Value, Option<String>, Option<Value>), DwError> {
         let parsed = parser::parse_script(script)?;
         let mut env = self.globals.clone();
         let mut modules: Vec<&str> = parsed.imports.iter().map(String::as_str).collect();
@@ -261,20 +270,29 @@ impl Interp {
             }
         }
         let value = eval::eval(&parsed.body, &env)?;
-        eval::as_value(value)
+        let value = eval::as_value(value)?;
+        Ok((value, parsed.output, parsed.output_options))
     }
 
-    /// Evaluates `script` and returns pretty-printed JSON text.
+    /// Evaluates `script` and returns text in the declared output format.
+    ///
+    /// The default output format is JSON.
     ///
     /// # Errors
     ///
     /// Returns [`DwError`] under the same conditions as [`Interp::eval`].
     pub fn run(&self, script: &str, inputs: &[(&str, &str)]) -> Result<String, DwError> {
-        self.eval(script, inputs).map(|value| json::write(&value))
+        let (value, output, options) = self.eval_parsed(script, inputs)?;
+        let content_type = output.as_deref().unwrap_or("application/json");
+        stdlib::write_output(
+            &value,
+            &crate::formats::normalize_mime(content_type),
+            options.as_ref(),
+        )
     }
 }
 
-/// Evaluates a script with optional JSON inputs and returns pretty-printed JSON.
+/// Evaluates a script with optional JSON inputs and returns text in the declared output format.
 ///
 /// This is a convenience wrapper around [`Interp::run`].
 ///

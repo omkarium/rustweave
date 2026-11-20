@@ -3729,10 +3729,10 @@ fn property_bool(object: Option<&Value>, key: &str, default: bool) -> bool {
 
 fn content_type(args: &[RValue], index: usize, default: &str) -> String {
     match args.get(index) {
-        Some(RValue::Val(Value::String(text))) if !text.is_empty() => {
-            text.split(';').next().unwrap_or(text).trim().to_string()
+        Some(RValue::Val(Value::String(text))) if !text.trim().is_empty() => {
+            crate::formats::normalize_mime(text)
         }
-        _ => default.to_string(),
+        _ => crate::formats::normalize_mime(default),
     }
 }
 
@@ -3787,40 +3787,14 @@ fn read_content(
         }
         "application/csv" | "text/csv" => {
             let text = text()?;
-            Ok(read_csv(&text, properties))
+            crate::formats::read_csv(&text, properties)
+        }
+        "application/xml" | "text/xml" => crate::formats::read_xml(&text()?, properties),
+        "application/yaml" | "application/x-yaml" | "text/yaml" => {
+            crate::formats::read_yaml(&text()?, properties)
         }
         other => Err(DwError::new(format!("unsupported content type '{other}'"))),
     }
-}
-
-fn read_csv(text: &str, properties: Option<&Value>) -> Value {
-    let separator = property_string(properties, "separator")
-        .and_then(|text| text.chars().next())
-        .unwrap_or(',');
-    let has_header = property_bool(properties, "header", true);
-    let mut rows = text.lines().filter(|line| !line.is_empty()).map(|line| {
-        line.split(separator)
-            .map(str::to_string)
-            .collect::<Vec<_>>()
-    });
-    let headers = if has_header {
-        rows.next().unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let mut out = Vec::new();
-    for row in rows {
-        let mut entries = Vec::new();
-        for (index, cell) in row.into_iter().enumerate() {
-            let key = headers
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| format!("column_{index}"));
-            entries.push((key, Value::String(cell)));
-        }
-        out.push(Value::Object(entries));
-    }
-    Value::Array(out)
 }
 
 fn write_value(args: &[RValue]) -> Result<Value, DwError> {
@@ -3851,7 +3825,28 @@ fn write_content(
         "application/octet-stream" | "application/x-binary" | "binary" => {
             Ok(Value::Binary(text_or_binary(value)?))
         }
+        "application/csv" | "text/csv" => {
+            Ok(Value::String(crate::formats::write_csv(value, properties)?))
+        }
+        "application/xml" | "text/xml" => {
+            Ok(Value::String(crate::formats::write_xml(value, properties)?))
+        }
+        "application/yaml" | "application/x-yaml" | "text/yaml" => Ok(Value::String(
+            crate::formats::write_yaml(value, properties)?,
+        )),
         other => Err(DwError::new(format!("unsupported content type '{other}'"))),
+    }
+}
+
+/// Writes a value using the MIME type from a script output declaration.
+pub(crate) fn write_output(
+    value: &Value,
+    content_type: &str,
+    properties: Option<&Value>,
+) -> Result<String, DwError> {
+    match write_content(value, content_type, properties)? {
+        Value::String(text) => Ok(text),
+        other => Ok(other.key_string()),
     }
 }
 
@@ -3938,9 +3933,30 @@ fn dw_write(value: &Value, level: usize) -> String {
     out
 }
 
+fn mime_from_path(path: &str) -> &'static str {
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    let path = path.to_ascii_lowercase();
+    if path.ends_with(".json") {
+        "application/json"
+    } else if path.ends_with(".csv") {
+        "application/csv"
+    } else if path.ends_with(".xml") {
+        "application/xml"
+    } else if path.ends_with(".yaml") || path.ends_with(".yml") {
+        "application/yaml"
+    } else {
+        "text/plain"
+    }
+}
+
 fn read_url(args: &[RValue]) -> Result<Value, DwError> {
     let url = string(args, 0)?;
-    let content_type = content_type(args, 1, "application/dw");
+    let content_type = match args.get(1) {
+        Some(RValue::Val(Value::String(text))) if !text.trim().is_empty() => {
+            crate::formats::normalize_mime(text)
+        }
+        _ => mime_from_path(&url).to_string(),
+    };
     let properties = optional_object(args, 2);
     let bytes = if let Some(path) = url.strip_prefix("file://") {
         std::fs::read(path)
