@@ -135,6 +135,85 @@ fn unknown_mime_errors() {
 }
 
 #[test]
+fn xml_read_mapping() {
+    let script = r####"%dw 2.0
+output application/json
+---
+read("<fleet id=\"f1\"><name>North Star</name><part>hull</part><part>sail</part><note>Calm &amp; clear</note><summary>Calm <b>seas</b></summary><m:flag>blue</m:flag><empty/></fleet>", "application/xml")"####;
+    let expected = r####"{
+  "fleet": {
+    "@id": "f1",
+    "name": "North Star",
+    "part": [
+      "hull",
+      "sail"
+    ],
+    "note": "Calm & clear",
+    "summary": {
+      "_": "Calm",
+      "b": "seas"
+    },
+    "m:flag": "blue",
+    "empty": null
+  }
+}"####;
+    assert_eq!(run(script), expected);
+
+    let script = r####"%dw 2.0
+output application/json
+---
+read("<fleet id=\"f1\"><name>North Star</name><note>Calm</note></fleet>", "text/xml", {attributePrefix: "$", textKey: "#"})"####;
+    let expected = r####"{
+  "fleet": {
+    "$id": "f1",
+    "name": "North Star",
+    "note": "Calm"
+  }
+}"####;
+    assert_eq!(run(script), expected);
+}
+
+#[test]
+fn xml_write_and_output() {
+    let script = r####"%dw 2.0
+output application/json
+---
+write({fleet: {"@id": "f1", name: "North & South", part: ["hull", "sail"], note: "Calm <clear>", empty: null}}, "application/xml")"####;
+    let expected = json_text(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<fleet id=\"f1\"><name>North &amp; South</name><part>hull</part><part>sail</part><note>Calm &lt;clear&gt;</note><empty/></fleet>",
+    );
+    assert_eq!(run(script), expected);
+
+    let script = r####"%dw 2.0
+output application/xml
+---
+{fleet: {"@id": "f1", name: "North Star", part: ["hull", "sail"]}}"####;
+    let expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<fleet id=\"f1\"><name>North Star</name><part>hull</part><part>sail</part></fleet>";
+    assert_eq!(run(script), expected);
+
+    let script = r####"%dw 2.0
+output application/xml indent=true, writeDeclaration=false
+---
+{fleet: {"@id": "f1", name: "North Star", part: ["hull", "sail"]}}"####;
+    let expected = "<fleet id=\"f1\">\n  <name>North Star</name>\n  <part>hull</part>\n  <part>sail</part>\n</fleet>";
+    assert_eq!(run(script), expected);
+}
+
+#[test]
+fn xml_errors() {
+    for script in [
+        r####"read("", "application/xml")"####,
+        r####"read("<a><b></a>", "application/xml")"####,
+        r####"read("<a/><b/>", "application/xml")"####,
+        r####"write({a: 1, b: 2}, "application/xml")"####,
+        r####"write({a: {"@x": {b: 1}}}, "application/xml")"####,
+        r####"write([1], "application/xml")"####,
+    ] {
+        assert!(run_result(script).is_err(), "expected error: {script}");
+    }
+}
+
+#[test]
 fn read_url_uses_extension() {
     let base = std::env::temp_dir();
     let id = std::process::id();
@@ -148,6 +227,11 @@ fn read_url_uses_extension() {
             format!("rustweave-{id}-records.csv"),
             "code,count\nG-17,4\n",
             "[\n  {\n    \"code\": \"G-17\",\n    \"count\": \"4\"\n  }\n]",
+        ),
+        (
+            format!("rustweave-{id}-records.xml"),
+            "<ship><name>Kite</name></ship>",
+            "{\n  \"ship\": {\n    \"name\": \"Kite\"\n  }\n}",
         ),
         (
             format!("rustweave-{id}-records.txt"),
