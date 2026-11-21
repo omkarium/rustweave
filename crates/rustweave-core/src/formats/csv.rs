@@ -2,9 +2,9 @@
 
 use std::collections::HashSet;
 
-use csv::{ReaderBuilder, Terminator, WriterBuilder};
+use csv::{ReaderBuilder, Terminator};
 
-use super::{bool_option, char_option, object_entries, string_option, validate_encoding};
+use super::{bool_option, char_option, object_entries, option, string_option, validate_encoding};
 use crate::error::DwError;
 use crate::value::Value;
 
@@ -14,9 +14,13 @@ struct CsvOptions {
     separator: u8,
     quote: u8,
     escape: u8,
+    escape_explicit: bool,
+    quote_values: bool,
     record_separator: String,
     skip_empty_line: bool,
     null_value: Option<String>,
+    header_line_number: usize,
+    body_start_line_number: Option<usize>,
 }
 
 impl CsvOptions {
@@ -26,11 +30,18 @@ impl CsvOptions {
             header: bool_option(options, "header", true)?,
             separator: char_option(options, "separator", ',')?,
             quote: char_option(options, "quote", '"')?,
-            escape: char_option(options, "escape", '"')?,
+            escape: char_option(options, "escape", '\\')?,
+            escape_explicit: option(options, "escape").is_some(),
+            quote_values: bool_option(options, "quoteValues", true)?,
             record_separator: string_option(options, "recordSeparator", Some("\n"))?
                 .unwrap_or_else(|| "\n".to_string()),
             skip_empty_line: bool_option(options, "skipEmptyLine", true)?,
             null_value: string_option(options, "nullValue", None)?,
+            header_line_number: line_number(options, "headerLineNumber", 1)?,
+            body_start_line_number: match option(options, "bodyStartLineNumber") {
+                Some(_) => Some(line_number(options, "bodyStartLineNumber", 1)?),
+                None => None,
+            },
         })
     }
 
@@ -44,10 +55,10 @@ impl CsvOptions {
         }
     }
 
-    fn write_terminator(&self) -> Result<Terminator, DwError> {
+    fn write_line_ending(&self) -> Result<&str, DwError> {
         match self.record_separator.as_str() {
-            "\r\n" => Ok(Terminator::CRLF),
-            text if text.len() == 1 && text.is_ascii() => Ok(Terminator::Any(text.as_bytes()[0])),
+            "\r\n" => Ok("\r\n"),
+            text if text.len() == 1 && text.is_ascii() => Ok(text),
             _ => Err(DwError::new(
                 "CSV recordSeparator must be one ASCII character or a line break",
             )),
@@ -59,6 +70,22 @@ impl CsvOptions {
             Some(null_value) if text == null_value => Value::Null,
             _ => Value::String(text.to_string()),
         }
+    }
+}
+
+/// Reads a non-negative line number from a writer or reader option.
+fn line_number(options: Option<&Value>, key: &str, default: usize) -> Result<usize, DwError> {
+    match option(options, key) {
+        None => Ok(default),
+        Some(Value::Number(number)) => number
+            .to_i64()
+            .filter(|value| *value >= 1)
+            .map(|value| value as usize)
+            .ok_or_else(|| DwError::new(format!("option '{key}' must be a positive integer"))),
+        Some(other) => Err(DwError::new(format!(
+            "option '{key}' must be a positive integer, found {}",
+            other.type_name()
+        ))),
     }
 }
 
@@ -149,15 +176,29 @@ pub(crate) fn read_csv(text: &str, options: Option<&Value>) -> Result<Value, DwE
     }
 
     if !options.header {
+        let start = options
+            .body_start_line_number
+            .unwrap_or(1)
+            .saturating_sub(1);
         return Ok(Value::Array(
             rows.into_iter()
-                .map(|row| Value::Array(row.iter().map(|field| options.field(field)).collect()))
+                .skip(start)
+                .map(|row| {
+                    Value::Object(
+                        row.iter()
+                            .enumerate()
+                            .map(|(index, field)| (format!("column_{index}"), options.field(field)))
+                            .collect(),
+                    )
+                })
                 .collect(),
         ));
     }
 
-    let mut rows = rows.into_iter();
-    let headers = rows.next().unwrap_or_default();
+    let header_index = options.header_line_number.saturating_sub(1);
+    let Some(headers) = rows.get(header_index).cloned() else {
+        return Ok(Value::Array(Vec::new()));
+    };
     let mut seen = HashSet::new();
     for header in &headers {
         if !seen.insert(header.clone()) {
@@ -165,8 +206,12 @@ pub(crate) fn read_csv(text: &str, options: Option<&Value>) -> Result<Value, DwE
         }
     }
 
+    let body_start = options
+        .body_start_line_number
+        .unwrap_or(options.header_line_number + 1)
+        .saturating_sub(1);
     let mut out = Vec::new();
-    for row in rows {
+    for row in rows.into_iter().skip(body_start) {
         if row.len() > headers.len() {
             return Err(DwError::new("CSV row has more fields than the header row"));
         }
@@ -188,6 +233,53 @@ fn csv_cell(value: &Value) -> Result<String, DwError> {
         )),
         other => Ok(other.key_string()),
     }
+}
+
+/// Formats one field using either quoting or escape-character rules.
+fn format_field(field: &str, options: &CsvOptions, escape_mode: bool) -> String {
+    let special = |byte: u8| {
+        byte == options.separator || byte == options.quote || byte == b'\r' || byte == b'\n'
+    };
+    if escape_mode {
+        let mut out = String::with_capacity(field.len());
+        for character in field.chars() {
+            let byte = if character.is_ascii() {
+                character as u8
+            } else {
+                0
+            };
+            if special(byte) || byte == options.escape {
+                out.push(options.escape as char);
+            }
+            out.push(character);
+        }
+        return out;
+    }
+    if !field.bytes().any(special) {
+        return field.to_string();
+    }
+    let mut out = String::with_capacity(field.len() + 2);
+    out.push(options.quote as char);
+    for character in field.chars() {
+        if character.is_ascii() && character as u8 == options.quote {
+            if options.escape == options.quote {
+                out.push(options.quote as char);
+            } else {
+                out.push(options.escape as char);
+            }
+        }
+        out.push(character);
+    }
+    out.push(options.quote as char);
+    out
+}
+
+fn format_record(record: &[String], options: &CsvOptions, escape_mode: bool) -> String {
+    record
+        .iter()
+        .map(|field| format_field(field, options, escape_mode))
+        .collect::<Vec<_>>()
+        .join(&(options.separator as char).to_string())
 }
 
 pub(crate) fn write_csv(value: &Value, options: Option<&Value>) -> Result<String, DwError> {
@@ -220,6 +312,10 @@ pub(crate) fn write_csv(value: &Value, options: Option<&Value>) -> Result<String
             }
             for row in rows {
                 let entries = object_entries(row)?;
+                if entries.is_empty() {
+                    records.push(Vec::new());
+                    continue;
+                }
                 let mut record = Vec::with_capacity(headers.len());
                 for header in &headers {
                     let cell = entries
@@ -255,24 +351,12 @@ pub(crate) fn write_csv(value: &Value, options: Option<&Value>) -> Result<String
         }
     }
 
-    let terminator = options.write_terminator()?;
-    let mut builder = WriterBuilder::new();
-    builder
-        .has_headers(false)
-        .flexible(true)
-        .delimiter(options.separator)
-        .quote(options.quote)
-        .escape(options.escape)
-        .double_quote(options.escape == options.quote)
-        .terminator(terminator);
-    let mut writer = builder.from_writer(Vec::new());
-    for record in records {
-        writer
-            .write_record(record)
-            .map_err(|error| DwError::new(format!("cannot write CSV: {error}")))?;
+    let line_ending = options.write_line_ending()?;
+    let escape_mode = !options.quote_values || options.escape_explicit;
+    let mut out = String::new();
+    for record in &records {
+        out.push_str(&format_record(record, &options, escape_mode));
+        out.push_str(line_ending);
     }
-    let bytes = writer
-        .into_inner()
-        .map_err(|error| DwError::new(format!("cannot finish CSV: {error}")))?;
-    String::from_utf8(bytes).map_err(|_| DwError::new("CSV output is not valid UTF-8"))
+    Ok(out)
 }

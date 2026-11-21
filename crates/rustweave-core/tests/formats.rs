@@ -37,14 +37,14 @@ output application/json
     }
   ],
   "noHeader": [
-    [
-      "1",
-      "2"
-    ],
-    [
-      "3",
-      "4"
-    ]
+    {
+      "column_0": "1",
+      "column_1": "2"
+    },
+    {
+      "column_0": "3",
+      "column_1": "4"
+    }
   ],
   "padded": [
     {
