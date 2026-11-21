@@ -2,7 +2,7 @@
 
 The module guides below put a complete DataWeave script and its expected output side by side. Each
 one uses every function listed for that module, so the examples show how the functions combine
-rather than isolating one call at a time. Together they cover all 330 namespace/name entries in the
+rather than isolating one call at a time. Together they cover all 345 namespace/name entries in the
 function index.
 
 Build once from the repository root:
@@ -33,19 +33,23 @@ prefer to build on demand. The runnable copies live in [`scripts/`](scripts/).
 | `dw::util::Values` | 5 | [values.md](values.md) |
 | `dw::util::Math` | 17 | [math.md](math.md) |
 | `dw::util::Diff` | 1 | [diff.md](diff.md) |
-| `dw::extra::Common` | 50 | [extra-common.md](extra-common.md) |
+| `dw::Crypto` | 5 | [crypto.md](crypto.md) |
+| `dw::util::Timer` | 4 | [timer.md](timer.md) |
+| `dw::extra::Common` | 56 | [extra-common.md](extra-common.md) |
 
 Each guide contains the full script, the command to run it, the expected JSON output, and the list
 of functions shown.
 
-## Mixed-module guides
+## Language and mixed-module guides
 
+[language.md](language.md) shows `using`, object head-tail spread, and value metadata.
 [combined.md](combined.md) combines Core, Arrays, Objects, and Tree in one inventory report.
 [scenarios.md](scenarios.md) contains three larger business-style pipelines with input files from
 [`data/`](data/).
 
 ## Notes
 
+- The extension crypto helpers have their own guide: [extension-crypto.md](extension-crypto.md).
 - Run the scripts from the repository root. `core.md` uses `readUrl` with the local path
   `examples/data/orders.json`, and the scenarios use the JSON files under `data/`.
 - Core logging helpers write to standard error and return their value. The expected output shows

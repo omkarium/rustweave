@@ -170,15 +170,17 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 
 - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
 - JSON, CSV, XML, YAML, text, and binary input and output, with reader and writer options.
-- Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, regex literals and ranges.
+- Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, `using`, object spread, value
+  metadata, regex literals and ranges.
 - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
   `dw::core::URL`, and `dw::core::Types` function surface.
-- The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`, and
-  `dw::util::Diff` utilities.
+- The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`,
+  `dw::util::Diff`, and `dw::util::Timer` utilities.
+- The `dw::Crypto` digest and HMAC helpers.
 - The `dw::extra::Common` extension module for general-purpose array, object, number, string,
-  function, collection, and null helpers. It is outside the compatibility surface and is imported
-  explicitly.
+  function, collection, null, and crypto helpers. It is outside the compatibility surface and is
+  imported explicitly.
 - Date, time, period, time-zone, type, and binary values.
 - A reusable `Interp` and direct `Value`/`json` access.
 
@@ -190,12 +192,10 @@ See the repository README for the full function list and CLI examples.
 
 ## What is not supported yet
 
-- Multipart, Crypto, other data formats, and timers.
+- Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary.
 - `dw::Runtime` (`try`/`orElse`/`fail`) is out of scope.
-- `using` is not supported.
-- Value metadata.
+- Typed `using` declarations and `xsiType`.
 - Lazy or streaming evaluation. This engine evaluates eagerly.
-- Object spread syntax.
 - The exact text of error messages is not part of the public contract, and regex behaviour follows
   Rust's `regex` crate rather than `java.util.regex`.
 

@@ -183,6 +183,9 @@ no header, the whole text is the body. Expressions include:
   arm
 - `do` blocks with one or more local variables and any body expression, including `if`/`else` and
   nested `do`
+- `using (name = expression, ...) body` prefix bindings
+- object head-tail spread with `{ key: value ~ tail }`, including dynamic head keys
+- value metadata with `value as Type { ... }`, `value.^key`, and `value.^`
 
 Infix function calls bind tighter than `++` and `default`, and looser than arithmetic, comparison,
 `and`, `or`, `as`, and unary/postfix operators. A bare `$` or `$$` on the right of an infix call is
@@ -549,6 +552,14 @@ empty: null
 
 `diff`
 
+### dw::Crypto
+
+`MD5`, `SHA1`, `hashWith`, `HMACWith`, `HMACBinary`
+
+### dw::util::Timer
+
+`currentMilliseconds`, `duration`, `time`, `toMilliseconds`
+
 ### dw::extra::Common
 
 `enumerate`, `range`, `sorted`, `reversed`, `chunk`, `compact`, `unique`, `fromEntries`, `assign`,
@@ -556,7 +567,8 @@ empty: null
 `lstrip`, `rstrip`, `zfill`, `partition`, `rpartition`, `identity`, `pipe`, `compose`, `fold`,
 `filterMap`, `stepBy`, `position`, `rposition`, `dedup`, `windows`, `chunksExact`, `binarySearch`,
 `rotateLeft`, `rotateRight`, `swap`, `fill`, `truncate`, `splitOnce`, `rsplitOnce`, `stripPrefix`,
-`stripSuffix`, `unwrapOr`, `unwrapOrElse`, `mapOr`, `andThen`, `orElse`
+`stripSuffix`, `unwrapOr`, `unwrapOrElse`, `mapOr`, `andThen`, `orElse`, `aesGcmEncrypt`,
+`aesGcmDecrypt`, `randomBytes`, `hkdfSha256`, `pbkdf2Sha256`, `constantTimeEquals`
 
 ## Error handling
 
@@ -568,9 +580,8 @@ of the public contract.
 
 The current release targets JSON, CSV, XML, and YAML output and the expression and
 standard-library surface listed above, including date/time, period, binary, type, tree, coercion,
-value, math, URL, and diff helpers. Multipart, Crypto, other data formats, timers, value metadata,
-and object spread are outside the current scope. `dw::Runtime` is out of scope, and `using` is not
-supported.
+value, math, URL, diff, crypto, and timer helpers. Multipart and other data formats are outside
+the current scope. `dw::Runtime` is out of scope.
 
 ## Development
 

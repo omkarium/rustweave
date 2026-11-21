@@ -116,8 +116,8 @@ $ echo $?
 
 The CLI supports JSON, CSV, XML, YAML, text, and binary output. The parser, evaluator, exact decimal arithmetic, standard library, and
 supported/unsupported feature list are provided by the `rustweave-core` crate; see its
-documentation. Multipart, Crypto, other data formats, and timers are not supported yet.
-`dw::Runtime` is out of scope, and `using` is not supported.
+documentation. Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary are
+not supported yet. `dw::Runtime` is out of scope.
 
 The engine is provided by the `rustweave-core` crate.
 

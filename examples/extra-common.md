@@ -1,8 +1,10 @@
 # Extension Common functions in one script
 
-Every helper in the extension module appears once. Collection, object, number, string, function, and null helpers are grouped by the kind of value they return.
+Every general-purpose helper in the extension module appears once. Collection, object, number,
+string, function, and null helpers are grouped by the kind of value they return. The crypto helpers
+have their own guide in [extension-crypto.md](extension-crypto.md).
 
-This script uses all 50 functions listed for `dw::extra::Common`.
+This script uses the 50 general-purpose functions in `dw::extra::Common`.
 
 Import `dw::extra::Common` to use the module functions. `null` is the only value treated as absent.
 
