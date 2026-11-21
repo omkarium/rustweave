@@ -333,6 +333,10 @@ const NAMES: &[&str] = &[
     "swap",
     "fill",
     "truncate",
+    "splitOnce",
+    "rsplitOnce",
+    "stripPrefix",
+    "stripSuffix",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -398,6 +402,10 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("swap", "swap"),
             ("fill", "fill"),
             ("truncate", "truncate"),
+            ("splitOnce", "splitOnce"),
+            ("rsplitOnce", "rsplitOnce"),
+            ("stripPrefix", "stripPrefix"),
+            ("stripSuffix", "stripSuffix"),
         ],
         _ => &[],
     }
@@ -669,6 +677,10 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "swap" => extra_swap(args),
         "fill" => extra_fill(args),
         "truncate" => extra_truncate(args),
+        "splitOnce" => extra_split_once(args, false),
+        "rsplitOnce" => extra_split_once(args, true),
+        "stripPrefix" => extra_strip_affix(args, true),
+        "stripSuffix" => extra_strip_affix(args, false),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -5419,6 +5431,43 @@ fn extra_truncate(args: &[RValue]) -> Result<Value, DwError> {
     }
     items.truncate(length as usize);
     Ok(Value::Array(items))
+}
+
+fn extra_split_once(args: &[RValue], last: bool) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let separator = string(args, 1)?;
+    if separator.is_empty() {
+        return Err(DwError::new("split separator must not be empty"));
+    }
+    let position = if last {
+        text.rfind(&separator)
+    } else {
+        text.find(&separator)
+    };
+    match position {
+        Some(index) => Ok(Value::Array(vec![
+            Value::String(text[..index].to_string()),
+            Value::String(text[index + separator.len()..].to_string()),
+        ])),
+        None => Ok(Value::Null),
+    }
+}
+
+fn extra_strip_affix(args: &[RValue], prefix: bool) -> Result<Value, DwError> {
+    let text = string(args, 0)?;
+    let affix = string(args, 1)?;
+    if affix.is_empty() {
+        return Ok(Value::String(text));
+    }
+    let stripped = if prefix {
+        text.strip_prefix(&affix)
+    } else {
+        text.strip_suffix(&affix)
+    };
+    match stripped {
+        Some(remainder) => Ok(Value::String(remainder.to_string())),
+        None => Ok(Value::Null),
+    }
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {

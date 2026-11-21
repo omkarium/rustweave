@@ -99,6 +99,57 @@ output application/json
 }
 
 #[test]
+fn split_once_and_strip_affixes() {
+    let script = r####"%dw 2.0
+import * from dw::extra::Common
+output application/json
+---
+{
+  first: splitOnce("alpha/beta/gamma", "/"),
+  firstAtStart: splitOnce("/alpha/beta", "/"),
+  firstMissing: splitOnce("plain", "/"),
+  last: rsplitOnce("alpha/beta/gamma", "/"),
+  lastAtEnd: rsplitOnce("alpha/beta/", "/"),
+  lastMissing: rsplitOnce("plain", "/"),
+  prefix: stripPrefix("v1.2.3", "v"),
+  prefixMissing: stripPrefix("1.2.3", "v"),
+  emptyPrefix: stripPrefix("keep", ""),
+  suffix: stripSuffix("report.csv", ".csv"),
+  suffixMissing: stripSuffix("report.txt", ".csv"),
+  emptySuffix: stripSuffix("keep", ""),
+  unicode: stripPrefix("café", "ca")
+}"####;
+    let expected = r####"{
+  "first": [
+    "alpha",
+    "beta/gamma"
+  ],
+  "firstAtStart": [
+    "",
+    "alpha/beta"
+  ],
+  "firstMissing": null,
+  "last": [
+    "alpha/beta",
+    "gamma"
+  ],
+  "lastAtEnd": [
+    "alpha/beta",
+    ""
+  ],
+  "lastMissing": null,
+  "prefix": "1.2.3",
+  "prefixMissing": null,
+  "emptyPrefix": "keep",
+  "suffix": "report",
+  "suffixMissing": null,
+  "emptySuffix": "keep",
+  "unicode": "fé"
+}"####;
+    assert_eq!(run(script), expected);
+}
+
+#[test]
 fn string_argument_errors() {
     for script in [
         r####"title(null)"####,
@@ -114,6 +165,15 @@ fn string_argument_errors() {
         r####"rpartition("a", "")"####,
         r####"partition(null, "a")"####,
         r####"rpartition("a", null)"####,
+        r####"splitOnce(null, "/")"####,
+        r####"splitOnce("a", null)"####,
+        r####"splitOnce("a", "")"####,
+        r####"rsplitOnce("a", "")"####,
+        r####"rsplitOnce(null, "/")"####,
+        r####"stripPrefix(null, "a")"####,
+        r####"stripPrefix("a", null)"####,
+        r####"stripSuffix(null, "a")"####,
+        r####"stripSuffix("a", null)"####,
     ] {
         let script = format!("%dw 2.0\nimport * from dw::extra::Common\n---\n{script}");
         assert!(run_result(&script).is_err(), "expected error: {script}");

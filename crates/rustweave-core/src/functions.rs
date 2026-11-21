@@ -1921,6 +1921,30 @@ impl Function {
         "Keeps only the first elements of an array."
     );
     index_function!(
+        EXTRA_COMMON_SPLIT_ONCE,
+        "dw::extra::Common",
+        "splitOnce",
+        "Splits text at its first separator occurrence into two parts."
+    );
+    index_function!(
+        EXTRA_COMMON_RSPLIT_ONCE,
+        "dw::extra::Common",
+        "rsplitOnce",
+        "Splits text at its last separator occurrence into two parts."
+    );
+    index_function!(
+        EXTRA_COMMON_STRIP_PREFIX,
+        "dw::extra::Common",
+        "stripPrefix",
+        "Removes one leading prefix from text."
+    );
+    index_function!(
+        EXTRA_COMMON_STRIP_SUFFIX,
+        "dw::extra::Common",
+        "stripSuffix",
+        "Removes one trailing suffix from text."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2249,6 +2273,10 @@ impl Function {
         Self::EXTRA_COMMON_SWAP,
         Self::EXTRA_COMMON_FILL,
         Self::EXTRA_COMMON_TRUNCATE,
+        Self::EXTRA_COMMON_SPLIT_ONCE,
+        Self::EXTRA_COMMON_RSPLIT_ONCE,
+        Self::EXTRA_COMMON_STRIP_PREFIX,
+        Self::EXTRA_COMMON_STRIP_SUFFIX,
         Self::DIFF_DIFF,
     ];
 }
