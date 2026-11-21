@@ -70,8 +70,8 @@
 //!
 //! The CLI supports JSON, CSV, XML, YAML, text, and binary output. The parser, evaluator, exact decimal arithmetic, standard library,
 //! and supported/unsupported feature list are provided by `rustweave-core`; see that crate's
-//! documentation. Multipart, Crypto, other data formats, timers, and `dw::Runtime` are
-//! not supported yet.
+//! documentation. Multipart, data formats other than JSON, CSV, XML, YAML, text, and binary, and
+//! `dw::Runtime` are not supported yet.
 //!
 //! # Trademarks
 //!
