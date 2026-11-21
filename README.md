@@ -168,19 +168,22 @@ A script may start with a header containing `%dw 2.0`, `output application/json`
 no header, the whole text is the body. Expressions include:
 
 - `null`, booleans, numbers, strings, arrays, and objects
-- variable references, selections, safe selectors, indexing, and calls
+- variable references, single and safe selections, multi-value `.*key`, descendant `..key`,
+  key-value `.&key`, XML attribute `.@key`/`.@`, filter `[?(predicate)]`, indexing, postfix
+  `!` assertions, and calls
 - infix function calls
 - `if`/`else`, `default`, `as`, `is`, and lambdas
 - `$` and `$$` implicit lambda parameters
-- `++`, `+`, `-`, `*`, `/`, `<<`, `--`, comparison operators, `and`, `or`, and `not`
+- `++`, `+`, `-`, `*`, `/`, `<<`, `>>`, `--`, `==`, coercing `~=`, comparison operators,
+  `and`, `or`, `not`, and prefix `!`
 - regex literals and array cons (`~`)
 - dynamic object keys, string interpolation, and trailing commas
 - ranges and range indexing
 - date, time, date-time, local date-time, local time, period, and binary values and literals
 - user-defined `type` declarations
 - `update` expressions in the form `value update selector with newValue`
-- `match`/`case` with literal, empty-array, and `[head ~ tail]` patterns, plus an optional `else`
-  arm
+- `match`/`case` with type, named-literal, guard, regex-capture, `[head ~ tail]`, `[]`,
+  `{key: value ~ tail}`, and `{}` patterns, plus an optional `else` arm
 - `do` blocks with one or more local variables and any body expression, including `if`/`else` and
   nested `do`
 - `using (name = expression, ...) body` prefix bindings
@@ -188,7 +191,8 @@ no header, the whole text is the body. Expressions include:
 - value metadata with `value as Type { ... }`, `value.^key`, and `value.^`
 
 Infix function calls bind tighter than `++` and `default`, and looser than arithmetic, comparison,
-`and`, `or`, `as`, and unary/postfix operators. A bare `$` or `$$` on the right of an infix call is
+`and`, `or`, `as`, and unary/postfix operators. `not` is a low-precedence prefix operator that
+applies to the whole following expression, while `!` binds tightly. A bare `$` or `$$` on the right of an infix call is
 an implicit lambda over the tighter part of the expression.
 
 Numbers use exact decimal arithmetic rather than binary floating point. Division keeps 34

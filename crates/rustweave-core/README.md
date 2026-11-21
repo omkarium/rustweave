@@ -124,8 +124,9 @@ println!("{output}");
 ## Expressions, `do`, and `match`
 
 The engine supports `if`/`else`, `default`, `as`, `is`, lambdas, `$`/`$$`, safe selectors,
+multi-value, descendant, key-value, attribute, and filter selectors, postfix `!` assertions,
 ranges, string interpolation, array cons, dynamic keys, trailing commas, `do` blocks, and
-`match`/`case` with literal, empty-array, `[head ~ tail]`, and `else` arms.
+`match`/`case` with type, named-literal, guard, regex-capture, array, object, and `else` arms.
 
 ```rust
 let output = rustweave_core::run(
@@ -171,7 +172,7 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
 - JSON, CSV, XML, YAML, text, and binary input and output, with reader and writer options.
 - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, `using`, object spread, value
-  metadata, regex literals and ranges.
+  metadata, regex literals, selectors, prepend, coercing equality, and ranges.
 - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
   `dw::core::URL`, and `dw::core::Types` function surface.
