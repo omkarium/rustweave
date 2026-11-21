@@ -30,6 +30,8 @@ pub enum Token {
     Comma,
     Colon,
     Dot,
+    DotDot,
+    At,
     Semi,
     Question,
     Op(String),
@@ -137,7 +139,20 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
                 pos += 1;
             }
             '.' => {
-                tokens.push(Token::Dot);
+                if chars.get(pos + 1) == Some(&'.') {
+                    tokens.push(Token::DotDot);
+                    pos += 2;
+                } else {
+                    tokens.push(Token::Dot);
+                    pos += 1;
+                }
+            }
+            '@' => {
+                tokens.push(Token::At);
+                pos += 1;
+            }
+            '&' => {
+                tokens.push(Token::Op("&".to_string()));
                 pos += 1;
             }
             '?' => {
@@ -203,8 +218,13 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
                 pos += 1;
             }
             '~' => {
-                tokens.push(Token::Op("~".to_string()));
-                pos += 1;
+                if chars.get(pos + 1) == Some(&'=') {
+                    tokens.push(Token::Op("~=".to_string()));
+                    pos += 2;
+                } else {
+                    tokens.push(Token::Op("~".to_string()));
+                    pos += 1;
+                }
             }
             '^' => {
                 tokens.push(Token::Op("^".to_string()));
@@ -243,6 +263,9 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
             '>' => {
                 if chars.get(pos + 1) == Some(&'=') {
                     tokens.push(Token::Op(">=".to_string()));
+                    pos += 2;
+                } else if chars.get(pos + 1) == Some(&'>') {
+                    tokens.push(Token::Op(">>".to_string()));
                     pos += 2;
                 } else {
                     tokens.push(Token::Op(">".to_string()));
@@ -303,7 +326,17 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
 /// Returns whether `/` starts a regex literal after a regex-aware function name.
 fn regex_allowed(tokens: &[Token]) -> bool {
     match tokens.last() {
+        None => true,
         Some(Token::Ident(name)) => REGEX_FUNCTIONS.contains(&name.as_str()),
+        Some(
+            Token::LParen
+            | Token::LBracket
+            | Token::LBrace
+            | Token::Comma
+            | Token::Colon
+            | Token::Arrow
+            | Token::Op(_),
+        ) => true,
         _ => false,
     }
 }

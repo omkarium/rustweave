@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Recursive-descent parser for scripts and expressions.
 
-use crate::ast::{BinOp, Expr, InterpSegment, Param, UnOp};
+use crate::ast::{BinOp, Expr, InterpSegment, MatchPattern, Param, UnOp};
 use crate::error::DwError;
 use crate::lexer::{lex, InterpPart, Token};
 use crate::number::Number;
@@ -377,6 +377,32 @@ impl Parser {
         }
     }
 
+    /// Consumes a field name, accepting an identifier or a quoted string.
+    fn key_name(&mut self) -> Result<String, DwError> {
+        match self.advance() {
+            Token::Ident(name) => Ok(name),
+            Token::Str(text) => Ok(text),
+            other => Err(DwError::new(format!(
+                "expected field name, found {other:?}"
+            ))),
+        }
+    }
+
+    /// Parses the attribute name after `.@`, if one is present.
+    fn parse_attribute(&mut self, target: Expr) -> Expr {
+        match self.peek().clone() {
+            Token::Ident(name) => {
+                self.advance();
+                Expr::AttrSelect(Box::new(target), Some(name))
+            }
+            Token::Str(text) => {
+                self.advance();
+                Expr::AttrSelect(Box::new(target), Some(text))
+            }
+            _ => Expr::AttrSelect(Box::new(target), None),
+        }
+    }
+
     /// Parses an expression using precedence climbing with the given minimum binding power.
     fn parse_expr(&mut self, min_bp: u8) -> Result<Expr, DwError> {
         let mut left = self.parse_prefix()?;
@@ -399,26 +425,52 @@ impl Parser {
                         };
                         continue;
                     }
-                    let name = match self.advance() {
-                        Token::Ident(name) => name,
-                        other => {
-                            return Err(DwError::new(format!(
-                                "expected field name, found {other:?}"
-                            )))
+                    match self.peek().clone() {
+                        Token::At => {
+                            self.advance();
+                            left = self.parse_attribute(left);
                         }
-                    };
-                    left = Expr::Select(Box::new(left), name);
+                        Token::Op(op) if op == "*" => {
+                            self.advance();
+                            let name = self.key_name()?;
+                            left = Expr::MultiSelect(Box::new(left), name);
+                        }
+                        Token::Op(op) if op == "&" => {
+                            self.advance();
+                            let name = self.key_name()?;
+                            left = Expr::KeyValueSelect(Box::new(left), name);
+                        }
+                        _ => {
+                            let name = self.key_name()?;
+                            left = Expr::Select(Box::new(left), name);
+                        }
+                    }
+                }
+                Token::DotDot => {
+                    self.advance();
+                    let name = self.key_name()?;
+                    left = Expr::DescendantSelect(Box::new(left), name);
                 }
                 Token::Question => {
                     self.advance();
                     left = match left {
                         Expr::Select(target, field) => Expr::SafeSelect(target, field),
                         Expr::Index(target, index) => Expr::SafeIndex(target, index),
+                        Expr::AttrSelect(target, key) => Expr::SafeAttr(target, key),
                         _ => return Err(self.error("unexpected '?'")),
                     };
                 }
                 Token::LBracket => {
                     self.advance();
+                    if self.peek() == &Token::Question {
+                        self.advance();
+                        self.expect(Token::LParen)?;
+                        let predicate = self.parse_expr(0)?;
+                        self.expect(Token::RParen)?;
+                        self.expect(Token::RBracket)?;
+                        left = Expr::Filter(Box::new(left), Box::new(predicate));
+                        continue;
+                    }
                     let index = self.parse_expr(0)?;
                     self.expect(Token::RBracket)?;
                     left = Expr::Index(Box::new(left), Box::new(index));
@@ -454,6 +506,11 @@ impl Parser {
                     left = Expr::Call(Box::new(left), args);
                 }
                 Token::Op(op) => {
+                    if op == "!" && is_assertable(&left) {
+                        self.advance();
+                        left = Expr::Assert(Box::new(left));
+                        continue;
+                    }
                     let (lbp, rbp, binary) = match op.as_str() {
                         "+" => (70, 71, BinOp::Add),
                         "-" => (70, 71, BinOp::Subtract),
@@ -462,8 +519,10 @@ impl Parser {
                         "%" => (80, 81, BinOp::Modulo),
                         "++" => (10, 11, BinOp::Concat),
                         "<<" => (10, 11, BinOp::Append),
+                        ">>" => (10, 11, BinOp::Prepend),
                         "--" => (10, 11, BinOp::Difference),
                         "==" => (50, 51, BinOp::Equal),
+                        "~=" => (50, 51, BinOp::CoercingEqual),
                         "!=" => (50, 51, BinOp::NotEqual),
                         "<" => (60, 61, BinOp::Less),
                         "<=" => (60, 61, BinOp::LessEqual),
@@ -631,7 +690,7 @@ impl Parser {
                 "using" => self.parse_using(),
                 "not" => {
                     self.advance();
-                    let inner = self.parse_expr(90)?;
+                    let inner = self.parse_expr(0)?;
                     Ok(Expr::Unary(UnOp::Not, Box::new(inner)))
                 }
                 "else" | "and" | "or" | "default" | "as" => Err(self.error("unexpected keyword")),
@@ -669,8 +728,7 @@ impl Parser {
         loop {
             if self.ident() == Some("case") {
                 self.advance();
-                let pattern = self.parse_expr(0)?;
-                validate_match_pattern(&pattern)?;
+                let pattern = self.parse_match_pattern()?;
                 self.expect(Token::Arrow)?;
                 let body = self.parse_expr(0)?;
                 arms.push((pattern, body));
@@ -680,7 +738,7 @@ impl Parser {
                 self.advance();
                 self.advance();
                 let body = self.parse_expr(0)?;
-                arms.push((Expr::Var("_".to_string()), body));
+                arms.push((MatchPattern::Else, body));
             } else {
                 break;
             }
@@ -690,6 +748,186 @@ impl Parser {
         }
         self.expect(Token::RBrace)?;
         Ok(Expr::Match(Box::new(subject), arms))
+    }
+
+    /// Parses one match pattern.
+    fn parse_match_pattern(&mut self) -> Result<MatchPattern, DwError> {
+        if self.ident() == Some("is") {
+            self.advance();
+            let type_name = self.type_name()?;
+            return Ok(MatchPattern::Type {
+                binding: None,
+                type_name,
+            });
+        }
+        if matches!(self.ident(), Some("null" | "true" | "false")) {
+            let literal = self.parse_pattern_literal()?;
+            return Ok(MatchPattern::Literal(literal));
+        }
+        if let Some(name) = self.ident().map(str::to_string) {
+            let next = self.tokens.get(self.pos + 1).cloned();
+            match next {
+                Some(Token::Ident(word)) if word == "is" => {
+                    self.advance();
+                    self.advance();
+                    let type_name = self.type_name()?;
+                    return Ok(MatchPattern::Type {
+                        binding: Some(name),
+                        type_name,
+                    });
+                }
+                Some(Token::Colon) => {
+                    self.advance();
+                    self.advance();
+                    let literal = self.parse_pattern_literal()?;
+                    return Ok(MatchPattern::NamedLiteral {
+                        binding: name,
+                        literal,
+                    });
+                }
+                Some(Token::Ident(word)) if word == "if" => {
+                    self.advance();
+                    self.advance();
+                    let condition = if self.peek() == &Token::LParen {
+                        self.advance();
+                        let condition = self.parse_expr(0)?;
+                        self.expect(Token::RParen)?;
+                        condition
+                    } else {
+                        self.parse_expr(0)?
+                    };
+                    return Ok(MatchPattern::Guard {
+                        binding: name,
+                        condition,
+                    });
+                }
+                Some(Token::Ident(word)) if word == "matches" => {
+                    self.advance();
+                    self.advance();
+                    return match self.advance() {
+                        Token::Regex(pattern) => Ok(MatchPattern::Regex {
+                            binding: Some(name),
+                            pattern,
+                        }),
+                        other => Err(DwError::new(format!(
+                            "expected regular expression, found {other:?}"
+                        ))),
+                    };
+                }
+                _ => return Err(self.error("unsupported match pattern")),
+            }
+        }
+        match self.peek().clone() {
+            Token::LBracket => self.parse_array_pattern(),
+            Token::LBrace => self.parse_object_pattern(),
+            Token::Number(_) | Token::Str(_) | Token::Ident(_) | Token::Regex(_) => {
+                let literal = self.parse_pattern_literal()?;
+                Ok(MatchPattern::Literal(literal))
+            }
+            _ => Err(self.error("unsupported match pattern")),
+        }
+    }
+
+    /// Parses a literal pattern value.
+    fn parse_pattern_literal(&mut self) -> Result<Expr, DwError> {
+        match self.advance() {
+            Token::Number(text) => Number::parse(&text)
+                .map(Expr::Number)
+                .ok_or_else(|| DwError::new(format!("invalid number {text}"))),
+            Token::Str(text) => Ok(Expr::String(text)),
+            Token::Ident(word) if word == "null" => Ok(Expr::Null),
+            Token::Ident(word) if word == "true" => Ok(Expr::Bool(true)),
+            Token::Ident(word) if word == "false" => Ok(Expr::Bool(false)),
+            other => Err(DwError::new(format!(
+                "unsupported match pattern near {other:?}"
+            ))),
+        }
+    }
+
+    /// Parses an array match pattern, including `[head ~ tail]`.
+    fn parse_array_pattern(&mut self) -> Result<MatchPattern, DwError> {
+        self.expect(Token::LBracket)?;
+        if self.peek() == &Token::RBracket {
+            self.advance();
+            return Ok(MatchPattern::Array(Vec::new()));
+        }
+        let first = self.parse_array_element_pattern()?;
+        if !matches!(self.peek(), Token::Op(op) if op == "~") {
+            return Err(self.error("unsupported match pattern"));
+        }
+        self.advance();
+        let tail = self.parse_array_element_pattern()?;
+        self.expect(Token::RBracket)?;
+        Ok(MatchPattern::ArrayCons {
+            head: Box::new(first),
+            tail: Box::new(tail),
+        })
+    }
+
+    /// Parses an array element or tail pattern, which may bind a name.
+    fn parse_array_element_pattern(&mut self) -> Result<MatchPattern, DwError> {
+        if self.peek() == &Token::LBracket {
+            return self.parse_array_pattern();
+        }
+        match self.peek().clone() {
+            Token::Ident(name) if !is_reserved(&name) => {
+                self.advance();
+                Ok(MatchPattern::Bind(name))
+            }
+            Token::Number(_) | Token::Str(_) | Token::Ident(_) | Token::Regex(_) => {
+                let literal = self.parse_pattern_literal()?;
+                Ok(MatchPattern::Literal(literal))
+            }
+            _ => Err(self.error("unsupported match pattern")),
+        }
+    }
+
+    /// Parses an object match pattern in the `{ key: value ~ tail }` form.
+    fn parse_object_pattern(&mut self) -> Result<MatchPattern, DwError> {
+        self.expect(Token::LBrace)?;
+        if self.peek() == &Token::RBrace {
+            self.advance();
+            return Ok(MatchPattern::EmptyObject);
+        }
+        let key = match self.advance() {
+            Token::Ident(name) => name,
+            other => {
+                return Err(DwError::new(format!(
+                    "expected object pattern key, found {other:?}"
+                )))
+            }
+        };
+        self.expect(Token::Colon)?;
+        let value = match self.advance() {
+            Token::Ident(name) => name,
+            other => {
+                return Err(DwError::new(format!(
+                    "expected object pattern value, found {other:?}"
+                )))
+            }
+        };
+        if !matches!(self.peek(), Token::Op(op) if op == "~") {
+            return Err(self.error("expected '~' in object pattern"));
+        }
+        self.advance();
+        let tail = match self.advance() {
+            Token::Ident(name) => name,
+            other => {
+                return Err(DwError::new(format!(
+                    "expected object pattern tail, found {other:?}"
+                )))
+            }
+        };
+        self.expect(Token::RBrace)?;
+        Ok(MatchPattern::ObjectCons { key, value, tail })
+    }
+
+    /// Parses a type name after `is`, `:` or a cast.
+    fn type_name(&mut self) -> Result<String, DwError> {
+        match self.advance() {
+            Token::Ident(name) => Ok(name),
+            other => Err(DwError::new(format!("expected type name, found {other:?}"))),
+        }
     }
 
     /// Parses `do { var ... --- body }`, requiring at least one declaration.
@@ -1019,45 +1257,6 @@ impl Parser {
     }
 }
 
-/// Rejects match patterns outside literals, `[]`, and `[head ~ tail]`.
-fn validate_match_pattern(pattern: &Expr) -> Result<(), DwError> {
-    match pattern {
-        Expr::Null | Expr::Bool(_) | Expr::Number(_) | Expr::String(_) => Ok(()),
-        Expr::Array(items) if items.is_empty() => Ok(()),
-        Expr::ArrayCons(head, tail) => {
-            validate_match_element(head)?;
-            validate_match_tail(tail)
-        }
-        _ => Err(DwError::new("unsupported match pattern")),
-    }
-}
-
-/// Validates the head element of an array-cons pattern.
-fn validate_match_element(pattern: &Expr) -> Result<(), DwError> {
-    match pattern {
-        Expr::Var(_) | Expr::Null | Expr::Bool(_) | Expr::Number(_) | Expr::String(_) => Ok(()),
-        Expr::Array(items) if items.is_empty() => Ok(()),
-        Expr::ArrayCons(head, tail) => {
-            validate_match_element(head)?;
-            validate_match_tail(tail)
-        }
-        _ => Err(DwError::new("unsupported match pattern")),
-    }
-}
-
-/// Validates the tail of an array-cons pattern.
-fn validate_match_tail(pattern: &Expr) -> Result<(), DwError> {
-    match pattern {
-        Expr::Var(_) => Ok(()),
-        Expr::Array(items) if items.is_empty() => Ok(()),
-        Expr::ArrayCons(head, tail) => {
-            validate_match_element(head)?;
-            validate_match_tail(tail)
-        }
-        _ => Err(DwError::new("unsupported match pattern")),
-    }
-}
-
 /// Returns whether an expression is a call that accepts a trailing `with` argument.
 fn is_with_call(expr: &Expr) -> bool {
     let accepted = |name: &str| matches!(name, "replace" | "replaceAll" | "update" | "mask");
@@ -1084,6 +1283,14 @@ fn append_replace_arg(expr: Expr, mut args: Vec<Expr>) -> Result<Expr, DwError> 
         }
         _ => Err(DwError::new("unexpected use of with")),
     }
+}
+
+/// Returns whether an expression can take a postfix non-null assertion.
+fn is_assertable(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Select(..) | Expr::Index(..) | Expr::AttrSelect(..)
+    )
 }
 
 /// Returns whether `name` is a reserved word that cannot start an expression.

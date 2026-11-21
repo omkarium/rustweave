@@ -57,10 +57,24 @@ pub enum Expr {
     Select(Box<Expr>, String),
     /// Safe field selection with `.name?`.
     SafeSelect(Box<Expr>, String),
+    /// Multi-value selection with `.*name`.
+    MultiSelect(Box<Expr>, String),
+    /// Descendant selection with `..name`.
+    DescendantSelect(Box<Expr>, String),
+    /// Key-value selection with `.&name`.
+    KeyValueSelect(Box<Expr>, String),
+    /// XML attribute selection with `.@name`, `.@"name"`, or `.@`.
+    AttrSelect(Box<Expr>, Option<String>),
+    /// Safe XML attribute selection with `.@name?`.
+    SafeAttr(Box<Expr>, Option<String>),
     /// Indexing with `[index]`.
     Index(Box<Expr>, Box<Expr>),
     /// Safe indexing with `[index]?`.
     SafeIndex(Box<Expr>, Box<Expr>),
+    /// Filter selection with `[?(predicate)]`.
+    Filter(Box<Expr>, Box<Expr>),
+    /// Postfix non-null assertion with `!`.
+    Assert(Box<Expr>),
     /// A function call written in infix form.
     Infix(String, Box<Expr>, Box<Expr>),
     /// A type cast with `as` and optional options.
@@ -72,7 +86,7 @@ pub enum Expr {
     /// Array construction with `[head ~ tail]`.
     ArrayCons(Box<Expr>, Box<Expr>),
     /// A `match` expression with pattern/body arms.
-    Match(Box<Expr>, Vec<(Expr, Expr)>),
+    Match(Box<Expr>, Vec<(MatchPattern, Expr)>),
     /// A `do` block with local declarations and a body.
     Do(Vec<(String, Expr)>, Box<Expr>),
     /// A `using` block with local declarations and a body.
@@ -83,6 +97,46 @@ pub enum Expr {
     MetaKey(Box<Expr>, String),
     /// The whole metadata object with `.^`.
     MetaAll(Box<Expr>),
+}
+
+/// A pattern in a `match` expression.
+#[derive(Clone, Debug)]
+pub enum MatchPattern {
+    /// The `else` arm, which always matches.
+    Else,
+    /// A bare name that binds the matched value.
+    Bind(String),
+    /// A literal value.
+    Literal(Expr),
+    /// `case [name is] Type`.
+    Type {
+        binding: Option<String>,
+        type_name: String,
+    },
+    /// `case name: literal`.
+    NamedLiteral { binding: String, literal: Expr },
+    /// `case name if (condition)`.
+    Guard { binding: String, condition: Expr },
+    /// `case [name] matches /pattern/`.
+    Regex {
+        binding: Option<String>,
+        pattern: String,
+    },
+    /// An exact array pattern.
+    Array(Vec<MatchPattern>),
+    /// An array pattern with a head and a tail.
+    ArrayCons {
+        head: Box<MatchPattern>,
+        tail: Box<MatchPattern>,
+    },
+    /// `{ keyVar: valueVar ~ tailVar }`.
+    ObjectCons {
+        key: String,
+        value: String,
+        tail: String,
+    },
+    /// `{}`.
+    EmptyObject,
 }
 
 /// Unary operators.
@@ -104,8 +158,10 @@ pub enum BinOp {
     Modulo,
     Concat,
     Append,
+    Prepend,
     Difference,
     Equal,
+    CoercingEqual,
     NotEqual,
     Less,
     LessEqual,
@@ -134,8 +190,17 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
                 || contains_placeholder(else_branch)
         }
         Expr::Lambda(_, body) => contains_placeholder(body),
-        Expr::Select(target, _) | Expr::SafeSelect(target, _) => contains_placeholder(target),
-        Expr::Index(target, index) | Expr::SafeIndex(target, index) => {
+        Expr::Select(target, _)
+        | Expr::SafeSelect(target, _)
+        | Expr::MultiSelect(target, _)
+        | Expr::DescendantSelect(target, _)
+        | Expr::KeyValueSelect(target, _)
+        | Expr::AttrSelect(target, _)
+        | Expr::SafeAttr(target, _)
+        | Expr::Assert(target) => contains_placeholder(target),
+        Expr::Index(target, index)
+        | Expr::SafeIndex(target, index)
+        | Expr::Filter(target, index) => {
             contains_placeholder(target) || contains_placeholder(index)
         }
         Expr::Infix(_, left, right) => contains_placeholder(left) || contains_placeholder(right),
@@ -152,7 +217,7 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
         Expr::Match(subject, arms) => {
             contains_placeholder(subject)
                 || arms.iter().any(|(pattern, body)| {
-                    contains_placeholder(pattern) || contains_placeholder(body)
+                    pattern_contains_placeholder(pattern) || contains_placeholder(body)
                 })
         }
         Expr::Do(declarations, body) => {
@@ -181,5 +246,22 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
         | Expr::String(_)
         | Expr::Literal(_)
         | Expr::Regex(_) => false,
+    }
+}
+
+/// Returns whether a match pattern contains an implicit `$` or `$$` parameter.
+fn pattern_contains_placeholder(pattern: &MatchPattern) -> bool {
+    match pattern {
+        MatchPattern::Else | MatchPattern::Bind(_) | MatchPattern::EmptyObject => false,
+        MatchPattern::Literal(value) => contains_placeholder(value),
+        MatchPattern::Type { .. } => false,
+        MatchPattern::NamedLiteral { literal, .. } => contains_placeholder(literal),
+        MatchPattern::Guard { condition, .. } => contains_placeholder(condition),
+        MatchPattern::Regex { .. } => false,
+        MatchPattern::Array(items) => items.iter().any(pattern_contains_placeholder),
+        MatchPattern::ArrayCons { head, tail } => {
+            pattern_contains_placeholder(head) || pattern_contains_placeholder(tail)
+        }
+        MatchPattern::ObjectCons { .. } => false,
     }
 }

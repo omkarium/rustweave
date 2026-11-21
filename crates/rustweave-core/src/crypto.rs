@@ -25,7 +25,7 @@ use crate::value::Value;
 ///
 /// Strings use their UTF-8 bytes, binaries are used directly, and numbers become a single
 /// byte: truncate toward zero, then take the value modulo 256.
-fn bytes(value: &Value, label: &str) -> Result<Vec<u8>, DwError> {
+pub(crate) fn bytes(value: &Value, label: &str) -> Result<Vec<u8>, DwError> {
     match value.unwrap_formatted() {
         Value::String(text) => Ok(text.as_bytes().to_vec()),
         Value::Binary(bytes) => Ok(bytes.clone()),

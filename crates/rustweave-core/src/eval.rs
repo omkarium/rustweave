@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use crate::ast::{contains_placeholder, BinOp, Expr, InterpSegment, Param, UnOp};
+use crate::ast::{contains_placeholder, BinOp, Expr, InterpSegment, MatchPattern, Param, UnOp};
 use crate::error::DwError;
 use crate::number::Number;
 use crate::runtime::{Closure, Env, RValue};
@@ -142,6 +142,29 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
             };
             Ok(RValue::Val(Value::Bool(exists)))
         }
+        Expr::MultiSelect(target, field) => {
+            let target = as_value(eval(target, env)?)?;
+            Ok(RValue::Val(multi_select(&target, field)))
+        }
+        Expr::DescendantSelect(target, field) => {
+            let target = as_value(eval(target, env)?)?;
+            descendant_select(&target, field).map(RValue::Val)
+        }
+        Expr::KeyValueSelect(target, field) => {
+            let target = as_value(eval(target, env)?)?;
+            Ok(RValue::Val(key_value_select(&target, field)))
+        }
+        Expr::AttrSelect(target, key) => {
+            let target = as_value(eval(target, env)?)?;
+            Ok(RValue::Val(attribute_select(&target, key.as_deref())))
+        }
+        Expr::SafeAttr(target, key) => {
+            let target = as_value(eval(target, env)?)?;
+            Ok(RValue::Val(Value::Bool(attribute_exists(
+                &target,
+                key.as_deref(),
+            ))))
+        }
         Expr::Index(target, index) => {
             let target = as_value(eval(target, env)?)?;
             let index = as_value(eval(index, env)?)?;
@@ -152,6 +175,11 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
             let index = as_value(eval(index, env)?)?;
             Ok(RValue::Val(Value::Bool(index_exists(&target, &index))))
         }
+        Expr::Filter(target, predicate) => {
+            let target = as_value(eval(target, env)?)?;
+            filter_select(&target, predicate, env).map(RValue::Val)
+        }
+        Expr::Assert(inner) => eval_assert(inner, env).map(RValue::Val),
         Expr::Call(callee, args) => eval_call(callee, args, env),
         Expr::Infix(name, left, right) => {
             let call = Expr::Call(
@@ -387,12 +415,316 @@ fn index_exists(target: &Value, index: &Value) -> bool {
     }
 }
 
+/// Selects every value for a key at one level.
+fn multi_select(target: &Value, key: &str) -> Value {
+    let mut out = Vec::new();
+    match target.unwrap_formatted() {
+        Value::Object(entries) => {
+            for (name, value) in entries {
+                if name == key {
+                    out.push(value.clone());
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                if let Value::Object(entries) = item.unwrap_formatted() {
+                    for (name, value) in entries {
+                        if name == key {
+                            out.push(value.clone());
+                        }
+                    }
+                }
+            }
+        }
+        _ => return Value::Null,
+    }
+    if out.is_empty() {
+        Value::Null
+    } else {
+        Value::Array(out)
+    }
+}
+
+/// Selects every value for a key anywhere in an object or array.
+fn descendant_select(target: &Value, key: &str) -> Result<Value, DwError> {
+    match target.unwrap_formatted() {
+        Value::Object(_) | Value::Array(_) => {}
+        other => {
+            return Err(DwError::new(format!(
+                "descendant selection requires an object or array, found {}",
+                other.type_name()
+            )))
+        }
+    }
+    let mut out = Vec::new();
+    collect_descendants(target, key, &mut out);
+    if out.is_empty() {
+        Ok(Value::Null)
+    } else {
+        Ok(Value::Array(out))
+    }
+}
+
+/// Collects matching descendant values in document order.
+fn collect_descendants(value: &Value, key: &str, out: &mut Vec<Value>) {
+    match value.unwrap_formatted() {
+        Value::Object(entries) => {
+            for (name, value) in entries {
+                if name == key {
+                    out.push(value.clone());
+                }
+                collect_descendants(value, key, out);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_descendants(item, key, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Selects matching keys together with their values.
+fn key_value_select(target: &Value, key: &str) -> Value {
+    match target.unwrap_formatted() {
+        Value::Object(entries) => {
+            let matches = matching_entries(entries, key);
+            if matches.is_empty() {
+                Value::Null
+            } else {
+                Value::Object(matches)
+            }
+        }
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                if let Value::Object(entries) = item.unwrap_formatted() {
+                    let matches = matching_entries(entries, key);
+                    if !matches.is_empty() {
+                        out.push(Value::Object(matches));
+                    }
+                }
+            }
+            if out.is_empty() {
+                Value::Null
+            } else {
+                Value::Array(out)
+            }
+        }
+        _ => Value::Null,
+    }
+}
+
+/// Returns the ordered entries matching a key.
+fn matching_entries(entries: &[(String, Value)], key: &str) -> Vec<(String, Value)> {
+    entries
+        .iter()
+        .filter(|(name, _)| name == key)
+        .cloned()
+        .collect()
+}
+
+/// Reads one XML attribute or all attributes from a node value.
+fn attribute_select(target: &Value, key: Option<&str>) -> Value {
+    let entries = match target.unwrap_formatted() {
+        Value::Object(entries) => entries,
+        _ => return Value::Null,
+    };
+    match key {
+        Some(key) => {
+            let name = format!("@{key}");
+            entries
+                .iter()
+                .rev()
+                .find(|(entry, _)| entry == &name)
+                .map(|(_, value)| value.clone())
+                .unwrap_or(Value::Null)
+        }
+        None => {
+            let attributes: Vec<(String, Value)> = entries
+                .iter()
+                .filter_map(|(name, value)| {
+                    name.strip_prefix('@')
+                        .map(|name| (name.to_string(), value.clone()))
+                })
+                .collect();
+            if attributes.is_empty() {
+                Value::Null
+            } else {
+                Value::Object(attributes)
+            }
+        }
+    }
+}
+
+/// Reports whether an XML attribute selector is present.
+fn attribute_exists(target: &Value, key: Option<&str>) -> bool {
+    let entries = match target.unwrap_formatted() {
+        Value::Object(entries) => entries,
+        _ => return false,
+    };
+    match key {
+        Some(key) => {
+            let name = format!("@{key}");
+            entries.iter().any(|(entry, _)| entry == &name)
+        }
+        None => entries.iter().any(|(name, _)| name.starts_with('@')),
+    }
+}
+
+/// Filters an array or object using a predicate over `$`.
+fn filter_select(target: &Value, predicate: &Expr, env: &Env) -> Result<Value, DwError> {
+    match target.unwrap_formatted() {
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                let local = env.extend("$".to_string(), RValue::Val(item.clone()));
+                if as_value(eval(predicate, &local)?)?.truthy() {
+                    out.push(item.clone());
+                }
+            }
+            Ok(if out.is_empty() {
+                Value::Null
+            } else {
+                Value::Array(out)
+            })
+        }
+        Value::Object(entries) => {
+            let mut out = Vec::new();
+            for (key, value) in entries {
+                let local = env.extend("$".to_string(), RValue::Val(value.clone()));
+                if as_value(eval(predicate, &local)?)?.truthy() {
+                    out.push((key.clone(), value.clone()));
+                }
+            }
+            Ok(if out.is_empty() {
+                Value::Null
+            } else {
+                Value::Object(out)
+            })
+        }
+        other => Err(DwError::new(format!("cannot filter {}", other.type_name()))),
+    }
+}
+
+/// Evaluates a postfix non-null assertion over a selector.
+fn eval_assert(inner: &Expr, env: &Env) -> Result<Value, DwError> {
+    match inner {
+        Expr::Select(target, field) => {
+            let target = as_value(eval(target, env)?)?;
+            target
+                .get(field)
+                .cloned()
+                .ok_or_else(|| DwError::new(format!("no key named '{field}'")))
+        }
+        Expr::Index(target, index) => {
+            let target = as_value(eval(target, env)?)?;
+            let index = as_value(eval(index, env)?)?;
+            if index_exists(&target, &index) {
+                eval_index(&target, &index)
+            } else {
+                Err(DwError::new("index out of bounds"))
+            }
+        }
+        Expr::AttrSelect(target, key) => {
+            let target = as_value(eval(target, env)?)?;
+            let key = key
+                .as_deref()
+                .ok_or_else(|| DwError::new("attribute assertion requires a name"))?;
+            if attribute_exists(&target, Some(key)) {
+                Ok(attribute_select(&target, Some(key)))
+            } else {
+                Err(DwError::new(format!("no attribute named '{key}'")))
+            }
+        }
+        _ => Err(DwError::new("assertion requires a selector")),
+    }
+}
+
+/// Implements `>>` for array prepending and date-time zone conversion.
+fn prepend(left: Value, right: Value) -> Result<RValue, DwError> {
+    let left = left.unwrap_formatted().clone();
+    let right = right.unwrap_formatted().clone();
+    match right {
+        Value::Array(mut items) => {
+            items.insert(0, left);
+            Ok(RValue::Val(Value::Array(items)))
+        }
+        Value::TimeZone(zone) => match left {
+            Value::DateTime(value) => Ok(RValue::Val(Value::DateTime(
+                crate::temporal::date_time_in_zone(&value, &zone)?,
+            ))),
+            other => Err(DwError::new(format!(
+                "cannot prepend a time zone to {}",
+                other.type_name()
+            ))),
+        },
+        other => Err(DwError::new(format!(
+            "cannot prepend to {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// Compares values by coercing compatible scalar types.
+fn coercing_equal(left: &Value, right: &Value) -> bool {
+    let left = left.unwrap_formatted();
+    let right = right.unwrap_formatted();
+    match (left, right) {
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| coercing_equal(x, y))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter().zip(b.iter()).all(|((ka, va), (kb, vb))| {
+                    coercing_equal(&Value::String(ka.clone()), &Value::String(kb.clone()))
+                        && coercing_equal(va, vb)
+                })
+        }
+        _ if left == right => true,
+        (Value::Null, _) | (_, Value::Null) => false,
+        (Value::Number(a), Value::Number(b)) => a == b,
+        (Value::Number(a), Value::String(b)) | (Value::String(b), Value::Number(a)) => {
+            Number::parse(b).map(|b| &b == a).unwrap_or(false)
+        }
+        (Value::Bool(a), Value::String(b)) | (Value::String(b), Value::Bool(a)) => {
+            let expected = if *a { "true" } else { "false" };
+            b.eq_ignore_ascii_case(expected)
+        }
+        (Value::String(text), other) | (other, Value::String(text)) if is_temporal(other) => {
+            temporal_string(other, None) == *text
+        }
+        _ => false,
+    }
+}
+
+/// Reports whether a value is a temporal or period value.
+fn is_temporal(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Date(_)
+            | Value::DateTime(_)
+            | Value::LocalDateTime(_)
+            | Value::LocalTime(_)
+            | Value::Time(_)
+            | Value::TimeZone(_)
+            | Value::Period(_)
+    )
+}
+
 /// Evaluates the first matching arm of a `match` expression.
-fn eval_match(subject: &Expr, arms: &[(Expr, Expr)], env: &Env) -> Result<RValue, DwError> {
-    let value = as_value(eval(subject, env)?)?;
+fn eval_match(subject: &Expr, arms: &[(MatchPattern, Expr)], env: &Env) -> Result<RValue, DwError> {
+    let value = match eval(subject, env)? {
+        RValue::Val(value) => value,
+        RValue::Regex(pattern) => Value::Regex(pattern),
+        _ => return Err(DwError::new("match subject cannot be a function")),
+    };
+    let base = env.extend("$".to_string(), RValue::Val(value.clone()));
     for (pattern, body) in arms {
-        if let Some(bindings) = match_pattern(pattern, &value) {
-            let mut arm_env = env.clone();
+        if let Some(bindings) = match_pattern(pattern, &value, &base)? {
+            let mut arm_env = base.clone();
             for (name, value) in bindings {
                 arm_env = arm_env.extend(name, RValue::Val(value));
             }
@@ -403,10 +735,96 @@ fn eval_match(subject: &Expr, arms: &[(Expr, Expr)], env: &Env) -> Result<RValue
 }
 
 /// Matches one pattern against a value and returns any variable bindings.
-fn match_pattern(pattern: &Expr, value: &Value) -> Option<Vec<(String, Value)>> {
+fn match_pattern(
+    pattern: &MatchPattern,
+    value: &Value,
+    env: &Env,
+) -> Result<Option<Vec<(String, Value)>>, DwError> {
+    let bindings = match pattern {
+        MatchPattern::Else => Some(Vec::new()),
+        MatchPattern::Bind(name) => Some(vec![(name.clone(), value.clone())]),
+        MatchPattern::Literal(literal) => match_literal(literal, value),
+        MatchPattern::Type { binding, type_name } => {
+            if is_type(value, type_name) {
+                Some(bind_binding(binding, value))
+            } else {
+                None
+            }
+        }
+        MatchPattern::NamedLiteral { binding, literal } => {
+            match_literal(literal, value).map(|_| vec![(binding.clone(), value.clone())])
+        }
+        MatchPattern::Guard { binding, condition } => {
+            let local = env.extend(binding.clone(), RValue::Val(value.clone()));
+            let condition = as_value(eval(condition, &local)?)?;
+            if condition.truthy() {
+                Some(vec![(binding.clone(), value.clone())])
+            } else {
+                None
+            }
+        }
+        MatchPattern::Regex { binding, pattern } => {
+            match_regex(pattern, value)?.map(|captures| bind_binding(binding, &captures))
+        }
+        MatchPattern::Array(items) => match value {
+            Value::Array(values) if values.len() == items.len() => {
+                let mut all = Vec::new();
+                for (item, value) in items.iter().zip(values.iter()) {
+                    let Some(bindings) = match_pattern(item, value, env)? else {
+                        return Ok(None);
+                    };
+                    all.extend(bindings);
+                }
+                Some(all)
+            }
+            _ => None,
+        },
+        MatchPattern::ArrayCons { head, tail } => match value {
+            Value::Array(values) if !values.is_empty() => {
+                let mut all = match match_pattern(head, &values[0], env)? {
+                    Some(bindings) => bindings,
+                    None => return Ok(None),
+                };
+                let tail_value = Value::Array(values[1..].to_vec());
+                match match_pattern(tail, &tail_value, env)? {
+                    Some(bindings) => all.extend(bindings),
+                    None => return Ok(None),
+                }
+                Some(all)
+            }
+            _ => None,
+        },
+        MatchPattern::ObjectCons {
+            key,
+            value: value_name,
+            tail,
+        } => match value {
+            Value::Object(entries) if !entries.is_empty() => Some(vec![
+                (key.clone(), Value::String(entries[0].0.clone())),
+                (value_name.clone(), entries[0].1.clone()),
+                (tail.clone(), Value::Object(entries[1..].to_vec())),
+            ]),
+            _ => None,
+        },
+        MatchPattern::EmptyObject => match value {
+            Value::Object(entries) if entries.is_empty() => Some(Vec::new()),
+            _ => None,
+        },
+    };
+    Ok(bindings)
+}
+
+/// Adds an optional pattern binding.
+fn bind_binding(binding: &Option<String>, value: &Value) -> Vec<(String, Value)> {
+    binding
+        .as_ref()
+        .map(|name| vec![(name.clone(), value.clone())])
+        .unwrap_or_default()
+}
+
+/// Matches a literal pattern expression.
+fn match_literal(pattern: &Expr, value: &Value) -> Option<Vec<(String, Value)>> {
     match pattern {
-        Expr::Var(name) if name == "_" => Some(Vec::new()),
-        Expr::Var(name) => Some(vec![(name.clone(), value.clone())]),
         Expr::Null => matches!(value, Value::Null).then(Vec::new),
         Expr::Bool(expected) => match value {
             Value::Bool(actual) if actual == expected => Some(Vec::new()),
@@ -420,26 +838,33 @@ fn match_pattern(pattern: &Expr, value: &Value) -> Option<Vec<(String, Value)>> 
             Value::String(actual) if actual == expected => Some(Vec::new()),
             _ => None,
         },
-        Expr::Array(items) => match value {
-            Value::Array(values) if values.len() == items.len() => {
-                let mut bindings = Vec::new();
-                for (item, value) in items.iter().zip(values.iter()) {
-                    bindings.extend(match_pattern(item, value)?);
-                }
-                Some(bindings)
-            }
-            _ => None,
-        },
-        Expr::ArrayCons(head, tail) => match value {
-            Value::Array(values) if !values.is_empty() => {
-                let mut bindings = match_pattern(head, &values[0])?;
-                bindings.extend(match_pattern(tail, &Value::Array(values[1..].to_vec()))?);
-                Some(bindings)
-            }
-            _ => None,
-        },
         _ => None,
     }
+}
+
+/// Matches a regular-expression pattern and returns its capture array.
+fn match_regex(pattern: &str, value: &Value) -> Result<Option<Value>, DwError> {
+    let text = match value {
+        Value::String(text) => text,
+        _ => return Ok(None),
+    };
+    let regex = regex::Regex::new(&format!("^(?:{pattern})$"))
+        .map_err(|error| DwError::new(format!("invalid regex: {error}")))?;
+    let captures = match regex.captures(text) {
+        Some(captures) => captures,
+        None => return Ok(None),
+    };
+    let mut groups = Vec::new();
+    if let Some(full) = captures.get(0) {
+        groups.push(Value::String(full.as_str().to_string()));
+    }
+    for group in captures.iter().skip(1) {
+        groups.push(match group {
+            Some(matched) => Value::String(matched.as_str().to_string()),
+            None => Value::Null,
+        });
+    }
+    Ok(Some(Value::Array(groups)))
 }
 
 /// Evaluates a call, wrapping implicit-lambda arguments for built-in functions.
@@ -691,10 +1116,12 @@ fn eval_binary(op: BinOp, left: &Expr, right: &Expr, env: &Env) -> Result<RValue
                 other.type_name()
             ))),
         },
+        BinOp::Prepend => prepend(left, right),
         BinOp::Difference => difference(left, right),
         BinOp::Equal => Ok(RValue::Val(Value::Bool(
             left.unwrap_formatted() == right.unwrap_formatted(),
         ))),
+        BinOp::CoercingEqual => Ok(RValue::Val(Value::Bool(coercing_equal(&left, &right)))),
         BinOp::NotEqual => Ok(RValue::Val(Value::Bool(
             left.unwrap_formatted() != right.unwrap_formatted(),
         ))),
@@ -1505,6 +1932,10 @@ fn cast(value: Value, type_name: &str, options: Option<&Value>) -> Result<Value,
         },
         "Binary" => match value {
             Value::Binary(_) => Ok(value),
+            Value::Number(number) => Ok(Value::Binary(crate::crypto::bytes(
+                &Value::Number(number),
+                "binary cast",
+            )?)),
             Value::String(text) => {
                 let base = option_text(options, "base").unwrap_or_default();
                 let bytes = match base.as_str() {

@@ -210,6 +210,18 @@ fn date_time_utc(date: &DateTime) -> Option<NaiveDateTime> {
     Some(local - ChronoDuration::seconds(date.zone.seconds() as i64))
 }
 
+/// Converts a date-time to the same instant in another time zone.
+pub fn date_time_in_zone(value: &DateTime, zone: &Zone) -> Result<DateTime, DwError> {
+    let utc = date_time_utc(value)
+        .ok_or_else(|| DwError::new("cannot convert date-time to a target time zone"))?;
+    let local = utc + ChronoDuration::seconds(zone.seconds() as i64);
+    Ok(DateTime {
+        date: date_from_naive(local.date()),
+        time: local_time_from_naive(local.time()),
+        zone: zone.clone(),
+    })
+}
+
 fn fraction_text(nano: u32) -> String {
     if nano == 0 {
         return String::new();
