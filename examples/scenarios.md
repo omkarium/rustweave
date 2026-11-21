@@ -155,8 +155,8 @@ do {
     sampled: stepBy(ordered, 2) map $.ticket,
     fullBatches: chunksExact(ordered, 3) map (batch) -> batch map $.ticket,
     firstBatch: truncate(ordered, 3) map $.ticket,
-    handoffLeft: rotateLeft(ordered, 1) map $.ticket,
-    handoffRight: rotateRight(ordered, 2) map $.ticket,
+    rotatedLeft: rotateLeft(ordered, 1) map $.ticket,
+    rotatedRight: rotateRight(ordered, 2) map $.ticket,
     swapped: swap(minutes, 0, 2),
     filled: fill(minutes, 0, 3, 5),
     nextHigh: position(ordered, (ticket) -> ticket.priority >= 4),
@@ -238,7 +238,7 @@ Expected output:
     "Q-32",
     "Q-33"
   ],
-  "handoffLeft": [
+  "rotatedLeft": [
     "Q-32",
     "Q-33",
     "Q-34",
@@ -246,7 +246,7 @@ Expected output:
     "Q-36",
     "Q-31"
   ],
-  "handoffRight": [
+  "rotatedRight": [
     "Q-35",
     "Q-36",
     "Q-31",

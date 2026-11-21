@@ -18,20 +18,34 @@ use subtle::ConstantTimeEq;
 type Aes192Gcm = AesGcm<Aes192, U12>;
 
 use crate::error::DwError;
+use crate::number::Number;
 use crate::value::Value;
 
 /// Converts a content argument to bytes.
 ///
-/// Strings use their UTF-8 bytes, binaries are used directly, and numbers use their
-/// minimal two's-complement big-endian byte representation.
+/// Strings use their UTF-8 bytes, binaries are used directly, and numbers become a single
+/// byte: truncate toward zero, then take the value modulo 256.
 fn bytes(value: &Value, label: &str) -> Result<Vec<u8>, DwError> {
     match value.unwrap_formatted() {
         Value::String(text) => Ok(text.as_bytes().to_vec()),
         Value::Binary(bytes) => Ok(bytes.clone()),
-        Value::Number(number) => match number.to_i64() {
-            Some(integer) => Ok(num_bigint::BigInt::from(integer).to_signed_bytes_be()),
-            None => Ok(number.to_string().into_bytes()),
-        },
+        Value::Number(number) => {
+            let truncated = if number.is_negative() {
+                number.ceil()
+            } else {
+                number.floor()
+            };
+            let mut remainder = truncated
+                .rem(&Number::from_i64(256))
+                .ok_or_else(|| DwError::new("invalid numeric content"))?;
+            if remainder.is_negative() {
+                remainder = remainder.add(&Number::from_i64(256));
+            }
+            let byte = remainder
+                .to_i64()
+                .ok_or_else(|| DwError::new("invalid numeric content"))?;
+            Ok(vec![byte as u8])
+        }
         other => Err(DwError::new(format!(
             "{label} must be a String or Binary, found {}",
             other.type_name()
