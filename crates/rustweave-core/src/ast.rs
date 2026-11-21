@@ -75,6 +75,14 @@ pub enum Expr {
     Match(Box<Expr>, Vec<(Expr, Expr)>),
     /// A `do` block with local declarations and a body.
     Do(Vec<(String, Expr)>, Box<Expr>),
+    /// A `using` block with local declarations and a body.
+    Using(Vec<(String, Expr)>, Box<Expr>),
+    /// Object construction with one head entry and an object tail.
+    ObjectSpread(Box<Expr>, Box<Expr>, Box<Expr>),
+    /// Metadata lookup with `.^key`.
+    MetaKey(Box<Expr>, String),
+    /// The whole metadata object with `.^`.
+    MetaAll(Box<Expr>),
 }
 
 /// Unary operators.
@@ -153,6 +161,18 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
                 .any(|(_, value)| contains_placeholder(value))
                 || contains_placeholder(body)
         }
+        Expr::Using(declarations, body) => {
+            declarations
+                .iter()
+                .any(|(_, value)| contains_placeholder(value))
+                || contains_placeholder(body)
+        }
+        Expr::ObjectSpread(key, value, tail) => {
+            contains_placeholder(key)
+                || contains_placeholder(value)
+                || contains_placeholder(tail)
+        }
+        Expr::MetaKey(target, _) | Expr::MetaAll(target) => contains_placeholder(target),
         Expr::Interp(parts) => parts.iter().any(|part| match part {
             InterpSegment::Text(_) => false,
             InterpSegment::Expr(expr) => contains_placeholder(expr),

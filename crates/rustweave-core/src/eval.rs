@@ -166,7 +166,18 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
                 Some(options) => Some(as_value(eval(options, env)?)?),
                 None => None,
             };
-            cast(value, type_name, options.as_ref()).map(RValue::Val)
+            let (cast_options, metadata) = match options {
+                Some(Value::Object(entries)) if entries.iter().any(|(key, _)| is_cast_option(key)) => {
+                    (Some(Value::Object(entries)), None)
+                }
+                Some(Value::Object(entries)) => (None, Some(entries)),
+                other => (other, None),
+            };
+            let value = cast(value, type_name, cast_options.as_ref())?;
+            Ok(RValue::Val(match metadata {
+                Some(entries) => value.with_metadata(entries),
+                None => value,
+            }))
         }
         Expr::Is(inner, type_name) => {
             let value = as_value(eval(inner, env)?)?;
@@ -189,11 +200,64 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
             }
             eval(body, &local)
         }
+        Expr::Using(declarations, body) => {
+            let mut local = env.clone();
+            for (name, value) in declarations {
+                let value = eval(value, &local)?;
+                local = local.extend(name.clone(), value);
+            }
+            eval(body, &local)
+        }
+        Expr::ObjectSpread(key, value, tail) => {
+            let key = as_value(eval(key, env)?)?.key_string();
+            let value = as_value(eval(value, env)?)?;
+            let tail = as_value(eval(tail, env)?)?;
+            match tail {
+                Value::Object(entries) => {
+                    let mut values = Vec::with_capacity(entries.len() + 1);
+                    values.push((key, value));
+                    values.extend(entries);
+                    Ok(RValue::Val(Value::Object(values)))
+                }
+                other => Err(DwError::new(format!(
+                    "object spread requires an object, found {}",
+                    other.type_name()
+                ))),
+            }
+        }
+        Expr::MetaKey(target, key) => {
+            let target = as_value(eval(target, env)?)?;
+            Ok(RValue::Val(
+                target
+                    .metadata()
+                    .and_then(|entries| {
+                        entries
+                            .iter()
+                            .rev()
+                            .find(|(name, _)| name == key)
+                            .map(|(_, value)| value.clone())
+                    })
+                    .unwrap_or(Value::Null),
+            ))
+        }
+        Expr::MetaAll(target) => {
+            let target = as_value(eval(target, env)?)?;
+            Ok(RValue::Val(Value::Object(target.metadata_entries())))
+        }
     }
+}
+
+/// Reports whether an `as Type { ... }` key selects cast options rather than metadata.
+fn is_cast_option(key: &str) -> bool {
+    matches!(
+        key,
+        "format" | "unit" | "base" | "pattern" | "locale" | "timeZone" | "timezone"
+    )
 }
 
 /// Selects a field from an object, maps over an array, or propagates null.
 fn select_field(target: &Value, field: &str) -> Result<Value, DwError> {
+    let target = target.unwrap_formatted();
     match target {
         Value::Object(_) => Ok(target.get(field).cloned().unwrap_or(Value::Null)),
         Value::Date(_)
@@ -224,6 +288,8 @@ fn select_field(target: &Value, field: &str) -> Result<Value, DwError> {
 
 /// Applies an index, including object keys, negative positions, and ranges.
 fn eval_index(target: &Value, index: &Value) -> Result<Value, DwError> {
+    let target = target.unwrap_formatted();
+    let index = index.unwrap_formatted();
     match (target, index) {
         (Value::Object(_), Value::String(key)) => {
             Ok(target.get(key).cloned().unwrap_or(Value::Null))
@@ -865,6 +931,8 @@ fn numeric_operand(value: &Value) -> Option<Number> {
 
 /// Implements `--` for arrays and objects.
 fn difference(left: Value, right: Value) -> Result<RValue, DwError> {
+    let left = left.unwrap_formatted().clone();
+    let right = right.unwrap_formatted().clone();
     match left {
         Value::Array(items) => {
             let removed = match &right {
@@ -1056,6 +1124,7 @@ fn temporal_string(value: &Value, format: Option<&str>) -> String {
     let value = value.unwrap_formatted();
     let pattern = format.unwrap_or("");
     match value {
+        Value::String(text) => text.clone(),
         Value::Date(date) => {
             if pattern.is_empty() {
                 crate::temporal::format_date(date)

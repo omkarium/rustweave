@@ -38,6 +38,7 @@ pub enum Value {
     Key(String),
     Type(Box<TypeValue>),
     Formatted(Box<Value>, String),
+    Meta(Box<Value>, Vec<(String, Value)>),
 }
 
 impl Value {
@@ -63,15 +64,36 @@ impl Value {
             Value::Key(_) => "Key",
             Value::Type(_) => "Type",
             Value::Formatted(inner, _) => inner.type_name(),
+            Value::Meta(inner, _) => inner.type_name(),
         }
     }
 
-    /// Returns the value without any stored input format.
+    /// Returns the value without any stored input format or metadata.
     pub fn unwrap_formatted(&self) -> &Value {
         match self {
             Value::Formatted(inner, _) => inner.unwrap_formatted(),
+            Value::Meta(inner, _) => inner.unwrap_formatted(),
             other => other,
         }
+    }
+
+    /// Returns the metadata map attached by `as Type { ... }`, if any.
+    pub fn metadata(&self) -> Option<&[(String, Value)]> {
+        match self {
+            Value::Meta(_, entries) => Some(entries),
+            Value::Formatted(inner, _) => inner.metadata(),
+            _ => None,
+        }
+    }
+
+    /// Attaches a metadata map to this value.
+    pub fn with_metadata(self, entries: Vec<(String, Value)>) -> Value {
+        Value::Meta(Box::new(self), entries)
+    }
+
+    /// Returns the metadata map as an owned list, or an empty list.
+    pub fn metadata_entries(&self) -> Vec<(String, Value)> {
+        self.metadata().map(|entries| entries.to_vec()).unwrap_or_default()
     }
 
     /// Wraps a temporal value with the exact text used for direct JSON output.
@@ -92,19 +114,24 @@ impl Value {
     pub fn input_format(&self) -> Option<&str> {
         match self {
             Value::Formatted(_, display) => Some(display),
+            Value::Meta(inner, _) => inner.input_format(),
             _ => None,
         }
     }
 
     /// Reports whether this is [`Value::Null`].
     pub fn is_null(&self) -> bool {
-        matches!(self, Value::Null)
+        match self {
+            Value::Meta(inner, _) => inner.is_null(),
+            other => matches!(other, Value::Null),
+        }
     }
 
     /// Returns the number inside this value, if it is a number.
     pub fn as_number(&self) -> Option<&Number> {
         match self {
             Value::Number(n) => Some(n),
+            Value::Meta(inner, _) => inner.as_number(),
             _ => None,
         }
     }
@@ -113,6 +140,7 @@ impl Value {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Value::String(s) => Some(s),
+            Value::Meta(inner, _) => inner.as_str(),
             _ => None,
         }
     }
@@ -121,6 +149,7 @@ impl Value {
     pub fn as_binary(&self) -> Option<&[u8]> {
         match self {
             Value::Binary(bytes) => Some(bytes),
+            Value::Meta(inner, _) => inner.as_binary(),
             _ => None,
         }
     }
@@ -129,6 +158,7 @@ impl Value {
     pub fn as_array(&self) -> Option<&[Value]> {
         match self {
             Value::Array(items) => Some(items),
+            Value::Meta(inner, _) => inner.as_array(),
             _ => None,
         }
     }
@@ -137,6 +167,7 @@ impl Value {
     pub fn as_object(&self) -> Option<&[(String, Value)]> {
         match self {
             Value::Object(entries) => Some(entries),
+            Value::Meta(inner, _) => inner.as_object(),
             _ => None,
         }
     }
@@ -145,6 +176,7 @@ impl Value {
     pub fn get(&self, key: &str) -> Option<&Value> {
         match self {
             Value::Object(entries) => entries.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v),
+            Value::Meta(inner, _) => inner.get(key),
             _ => None,
         }
     }
@@ -243,6 +275,7 @@ impl Value {
                 }
             }
             Value::Null => Some(Value::Null),
+            Value::Meta(inner, _) => inner.get_index(index),
             _ => None,
         }
     }
@@ -252,12 +285,16 @@ impl Value {
     /// Replaces the first entry with `key`, or appends a new entry. Does
     /// nothing when the value is not an object.
     pub fn insert(&mut self, key: String, value: Value) {
-        if let Value::Object(entries) = self {
-            if let Some(slot) = entries.iter_mut().find(|(k, _)| *k == key) {
-                slot.1 = value;
-            } else {
-                entries.push((key, value));
+        match self {
+            Value::Object(entries) => {
+                if let Some(slot) = entries.iter_mut().find(|(k, _)| *k == key) {
+                    slot.1 = value;
+                } else {
+                    entries.push((key, value));
+                }
             }
+            Value::Meta(inner, _) => inner.insert(key, value),
+            _ => {}
         }
     }
 
@@ -273,6 +310,7 @@ impl Value {
             Value::Object(entries) => Some(entries.len()),
             Value::String(text) => Some(text.chars().count()),
             Value::Binary(bytes) => Some(bytes.len()),
+            Value::Meta(inner, _) => inner.len(),
             _ => None,
         }
     }
@@ -285,6 +323,7 @@ impl Value {
             Value::Array(items) => items.is_empty(),
             Value::Object(entries) => entries.is_empty(),
             Value::Binary(bytes) => bytes.is_empty(),
+            Value::Meta(inner, _) => inner.is_empty(),
             _ => false,
         }
     }
@@ -308,6 +347,7 @@ impl Value {
             Value::Uri(text) | Value::Key(text) => text.clone(),
             Value::Type(value) => value.display(),
             Value::Formatted(_, _) => crate::json::write(self),
+            Value::Meta(inner, _) => inner.key_string(),
             _ => crate::json::write(self),
         }
     }
@@ -329,13 +369,14 @@ impl Value {
                     || !period.time_seconds.is_zero()
             }
             Value::Formatted(inner, _) => inner.truthy(),
+            Value::Meta(inner, _) => inner.truthy(),
             _ => true,
         }
     }
 
     /// Compares values structurally, with numbers compared by numeric value.
     pub fn deep_eq(&self, other: &Value) -> bool {
-        self == other
+        self.unwrap_formatted() == other.unwrap_formatted()
     }
 
     /// Orders two values when they are comparable.
@@ -404,6 +445,10 @@ impl fmt::Debug for Value {
             Value::Uri(text) | Value::Key(text) => write!(f, "{text:?}"),
             Value::Type(value) => write!(f, "{value}"),
             Value::Formatted(inner, display) => write!(f, "{inner:?} ({display})"),
+            Value::Meta(inner, entries) => {
+                f.debug_map().entries(entries.iter().map(|(k, v)| (k, v))).finish()?;
+                write!(f, " over {inner:?}")
+            }
         }
     }
 }

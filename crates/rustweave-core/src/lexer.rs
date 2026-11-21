@@ -206,6 +206,10 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
                 tokens.push(Token::Op("~".to_string()));
                 pos += 1;
             }
+            '^' => {
+                tokens.push(Token::Op("^".to_string()));
+                pos += 1;
+            }
             '=' => {
                 if chars.get(pos + 1) == Some(&'=') {
                     tokens.push(Token::Op("==".to_string()));

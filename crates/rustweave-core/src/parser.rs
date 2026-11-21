@@ -384,6 +384,21 @@ impl Parser {
             match self.peek().clone() {
                 Token::Dot => {
                     self.advance();
+                    if matches!(self.peek(), Token::Op(op) if op == "^") {
+                        self.advance();
+                        left = match self.peek().clone() {
+                            Token::Ident(name) => {
+                                self.advance();
+                                Expr::MetaKey(Box::new(left), name)
+                            }
+                            Token::Str(text) => {
+                                self.advance();
+                                Expr::MetaKey(Box::new(left), text)
+                            }
+                            _ => Expr::MetaAll(Box::new(left)),
+                        };
+                        continue;
+                    }
                     let name = match self.advance() {
                         Token::Ident(name) => name,
                         other => {
@@ -613,6 +628,7 @@ impl Parser {
                 }
                 "if" => self.parse_if(),
                 "do" => self.parse_do(),
+                "using" => self.parse_using(),
                 "not" => {
                     self.advance();
                     let inner = self.parse_expr(90)?;
@@ -757,6 +773,53 @@ impl Parser {
         self.pos = index;
         self.expect(Token::RBrace)?;
         Ok(Expr::Do(declarations, Box::new(body)))
+    }
+
+    /// Parses `using (name = expression, ...) body`.
+    fn parse_using(&mut self) -> Result<Expr, DwError> {
+        self.advance();
+        self.expect(Token::LParen)?;
+        if self.peek() == &Token::RParen {
+            return Err(self.error("using requires at least one declaration"));
+        }
+        let mut declarations: Vec<(String, Expr)> = Vec::new();
+        loop {
+            let name = match self.advance() {
+                Token::Ident(name) if !is_reserved(&name) => name,
+                other => {
+                    return Err(DwError::new(format!(
+                        "expected variable name, found {other:?}"
+                    )))
+                }
+            };
+            if self.peek() == &Token::Colon {
+                return Err(DwError::new(
+                    "typed using declarations are not supported",
+                ));
+            }
+            if !matches!(self.peek(), Token::Op(op) if op == "=") {
+                return Err(self.error("expected '=' in using declaration"));
+            }
+            self.advance();
+            let value = self.parse_expr(0)?;
+            if declarations.iter().any(|(existing, _)| existing == &name) {
+                return Err(DwError::new(format!("duplicate using name '{name}'")));
+            }
+            declarations.push((name, value));
+            match self.peek().clone() {
+                Token::Comma => {
+                    self.advance();
+                    if self.peek() == &Token::RParen {
+                        return Err(self.error("trailing comma in using"));
+                    }
+                }
+                Token::RParen => break,
+                _ => return Err(self.error("expected ',' or ')' in using")),
+            }
+        }
+        self.advance();
+        let body = self.parse_expr(0)?;
+        Ok(Expr::Using(declarations, Box::new(body)))
     }
 
     /// Parses `if (condition) then else otherwise`.
@@ -925,6 +988,19 @@ impl Parser {
             };
             self.advance();
             let value = self.parse_expr(0)?;
+            if matches!(self.peek(), Token::Op(op) if op == "~") {
+                if !entries.is_empty() {
+                    return Err(self.error("object spread requires exactly one head entry"));
+                }
+                self.advance();
+                let tail = self.parse_expr(0)?;
+                self.expect(Token::RBrace)?;
+                return Ok(Expr::ObjectSpread(
+                    Box::new(key),
+                    Box::new(value),
+                    Box::new(tail),
+                ));
+            }
             entries.push((key, value));
             match self.peek().clone() {
                 Token::Comma => {
@@ -1027,5 +1103,6 @@ fn is_reserved(name: &str) -> bool {
             | "null"
             | "true"
             | "false"
+            | "using"
     )
 }

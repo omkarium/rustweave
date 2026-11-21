@@ -3999,6 +3999,7 @@ fn dw_write(value: &Value, level: usize) -> String {
         Value::Uri(text) | Value::Key(text) => out.push_str(text),
         Value::Type(value) => out.push_str(&value.display()),
         Value::Formatted(_, display) => out.push_str(display),
+        Value::Meta(inner, _) => out.push_str(&dw_write(inner, level)),
     }
     out
 }

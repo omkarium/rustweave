@@ -190,6 +190,7 @@ fn write_value_options(value: &Value, level: usize, out: &mut String, options: &
         Value::Uri(text) | Value::Key(text) => write_string(text, out),
         Value::Type(value) => write_string(&value.display(), out),
         Value::Formatted(_, display) => write_string(display, out),
+        Value::Meta(inner, _) => write_value_options(inner, level, out, options),
     }
 }
 
@@ -255,6 +256,7 @@ fn write_value(value: &Value, level: usize, out: &mut String) {
         Value::Uri(text) | Value::Key(text) => write_string(text, out),
         Value::Type(value) => write_string(&value.display(), out),
         Value::Formatted(_, display) => write_string(display, out),
+        Value::Meta(inner, _) => write_value(inner, level, out),
     }
 }
 
