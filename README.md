@@ -163,9 +163,9 @@ including its DataWeave namespace and a short description. The complete list is 
 
 ## Language surface
 
-A script may start with a header containing `%dw 2.0`, `output application/json`,
-`import * from ...`, named imports, `var`, `fun`, `type` declarations, and annotations. If there is
-no header, the whole text is the body. Expressions include:
+A script may start with a header containing `%dw 2.0`, `output` with a MIME type or format ID,
+`import * from ...`, named imports, `var`, `fun`, `type`, and `ns` declarations, and annotations.
+If there is no header, the whole text is the body. Expressions include:
 
 - `null`, booleans, numbers, strings, arrays, and objects
 - variable references, single and safe selections, multi-value `.*key`, descendant `..key`,
@@ -180,7 +180,9 @@ no header, the whole text is the body. Expressions include:
 - dynamic object keys, string interpolation, and trailing commas
 - ranges and range indexing
 - date, time, date-time, local date-time, local time, period, and binary values and literals
-- user-defined `type` declarations
+- user-defined `type` aliases over built-in, object, array, union, intersection, nested, and
+  forward-referenced types, with `as` coercion and structural `is` checks
+- `ns` prefix declarations and `prefix#name` object keys
 - `update` expressions in the form `value update selector with newValue`
 - `match`/`case` with type, named-literal, guard, regex-capture, `[head ~ tail]`, `[]`,
   `{key: value ~ tail}`, and `{}` patterns, plus an optional `else` arm
@@ -189,6 +191,13 @@ no header, the whole text is the body. Expressions include:
 - `using (name = expression, ...) body` prefix bindings
 - object head-tail spread with `{ key: value ~ tail }`, including dynamic head keys
 - value metadata with `value as Type { ... }`, `value.^key`, and `value.^`
+- the `json`, `csv`, `xml`, `dw`, and `text` output format IDs, plus `output ... with writer`
+
+Object types enforce required fields and field types during `as`; optional fields may be absent and
+extra fields are kept. Array element types are not checked by `as` or `is`. A union coerces to a
+member when needed and `is` is structural. Namespace prefixes affect XML output only: XML emits
+matching `xmlns` declarations and JSON drops the prefix. The writer after `with` determines the
+output bytes, while writer properties such as `indent=false` still apply.
 
 Infix function calls bind tighter than `++` and `default`, and looser than arithmetic, comparison,
 `and`, `or`, `as`, and unary/postfix operators. `not` is a low-precedence prefix operator that
@@ -386,11 +395,16 @@ Module-by-module examples with full scripts, commands, and expected output are i
 ## Structured formats
 
 CSV, XML, and YAML are available through `read`, `write`, `readUrl`, and the `output` header.
-MIME matching ignores case and trims parameters such as `; charset=UTF-8`:
+Header output also accepts the format IDs `json`, `csv`, `xml`, `dw`, and `text`, and the
+`output <mime or id> with <writer>` form. MIME matching ignores case and trims parameters such as
+`; charset=UTF-8`:
 
 - CSV: `application/csv`, `text/csv`
 - XML: `application/xml`, `text/xml`
 - YAML: `application/yaml`, `application/x-yaml`, `text/yaml`
+
+Format IDs map to the corresponding writer, and `with` chooses the writer without changing the
+declared type. An unknown writer is an error.
 
 CSV reader and writer options include `header`, `separator`, `quote`, `escape`,
 `recordSeparator`, `skipEmptyLine`, and `nullValue`. XML options include `attributePrefix`,
@@ -458,6 +472,20 @@ ship:
     - calm
     - sea
 empty: null
+```
+
+Use a format ID, or choose a writer with `with` while keeping writer properties:
+
+```text
+%dw 2.0
+output application/problem+json with csv separator=";"
+---
+[{sku: "A-1", qty: 2}]
+```
+
+```text
+sku;qty
+A-1;2
 ```
 
 `readUrl` selects a format from `.json`, `.csv`, `.xml`, `.yaml`, `.yml`, and falls back to

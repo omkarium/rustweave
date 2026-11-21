@@ -32,8 +32,116 @@ pub struct Script {
     pub items: Vec<HeaderItem>,
     pub imports: Vec<String>,
     pub output: Option<String>,
+    pub output_writer: Option<String>,
     pub output_options: Option<Value>,
+    pub namespaces: Vec<(String, String)>,
     pub body: Expr,
+}
+
+/// Adds a namespace declaration, rejecting a repeated prefix.
+fn add_namespace(
+    namespaces: &mut Vec<(String, String)>,
+    prefix: &str,
+    uri: &str,
+) -> Result<(), DwError> {
+    if namespaces.iter().any(|(existing, _)| existing == prefix) {
+        return Err(DwError::new(format!(
+            "duplicate namespace prefix '{prefix}'"
+        )));
+    }
+    namespaces.push((prefix.to_string(), uri.to_string()));
+    Ok(())
+}
+
+/// Reports whether a character can appear in an identifier.
+fn is_ident_char(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+/// Removes `ns prefix uri` declarations from a body and returns them.
+///
+/// Namespace declarations are metadata for the output writers, so the
+/// expression parser does not need to see them.
+fn extract_do_namespaces(text: &str) -> Result<(String, Vec<(String, String)>), DwError> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut namespaces = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0usize;
+    while index < chars.len() {
+        let character = chars[index];
+        if character == '"' || character == '\'' {
+            let quote = character;
+            out.push(character);
+            index += 1;
+            while index < chars.len() {
+                let current = chars[index];
+                out.push(current);
+                index += 1;
+                if current == '\\' {
+                    if let Some(escaped) = chars.get(index) {
+                        out.push(*escaped);
+                        index += 1;
+                    }
+                } else if current == quote {
+                    break;
+                }
+            }
+            continue;
+        }
+        let starts_ident =
+            is_ident_char(character) && (index == 0 || !is_ident_char(chars[index - 1]));
+        if starts_ident
+            && character == 'n'
+            && chars.get(index + 1) == Some(&'s')
+            && chars
+                .get(index + 2)
+                .map(|next| !is_ident_char(*next))
+                .unwrap_or(false)
+            && chars
+                .get(index + 2)
+                .map(|next| next.is_whitespace())
+                .unwrap_or(false)
+        {
+            let mut cursor = index + 2;
+            while cursor < chars.len() && chars[cursor].is_whitespace() {
+                cursor += 1;
+            }
+            let prefix_start = cursor;
+            while cursor < chars.len() && is_ident_char(chars[cursor]) {
+                cursor += 1;
+            }
+            let prefix: String = chars[prefix_start..cursor].iter().collect();
+            if !prefix.is_empty() && cursor < chars.len() && chars[cursor].is_whitespace() {
+                while cursor < chars.len() && chars[cursor].is_whitespace() {
+                    cursor += 1;
+                }
+                let uri_start = cursor;
+                while cursor < chars.len()
+                    && !chars[cursor].is_whitespace()
+                    && chars[cursor] != '{'
+                    && chars[cursor] != '}'
+                {
+                    if chars[cursor] == '-'
+                        && chars.get(cursor + 1) == Some(&'-')
+                        && chars.get(cursor + 2) == Some(&'-')
+                    {
+                        break;
+                    }
+                    cursor += 1;
+                }
+                let uri: String = chars[uri_start..cursor].iter().collect();
+                if !uri.is_empty() {
+                    add_namespace(&mut namespaces, &prefix, &uri)?;
+                    out.push_str(&format!("var __namespace_{} = null", namespaces.len()));
+                    index = cursor;
+                    continue;
+                }
+            }
+        }
+        out.push(character);
+        index += 1;
+    }
+    Ok((out, namespaces))
 }
 
 /// Finds the header separator, ignoring `---` used inside a body or `do` block.
@@ -72,12 +180,15 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
     let mut items = Vec::new();
     let mut imports = Vec::new();
     let mut output = None;
+    let mut output_writer = None;
     let mut output_options = None;
+    let mut namespaces = Vec::new();
     for line in header_lines {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("output ") {
-            let (mime, options) = parse_output_declaration(rest)?;
+            let (mime, writer, options) = parse_output_declaration(rest)?;
             output = Some(mime);
+            output_writer = writer;
             output_options = options;
             continue;
         }
@@ -118,23 +229,42 @@ pub fn parse_script(text: &str) -> Result<Script, DwError> {
             items.push(HeaderItem::Type(name, value.trim().to_string()));
             continue;
         }
-        if line.starts_with("ns ") {
+        if let Some(rest) = line.strip_prefix("ns ") {
+            let mut parts = rest.split_whitespace();
+            let prefix = parts
+                .next()
+                .ok_or_else(|| DwError::new("namespace declaration is missing a prefix"))?;
+            let uri = parts
+                .next()
+                .ok_or_else(|| DwError::new("namespace declaration is missing a URI"))?;
+            if parts.next().is_some() {
+                return Err(DwError::new("invalid namespace declaration"));
+            }
+            add_namespace(&mut namespaces, prefix, uri)?;
             continue;
         }
         return Err(DwError::new(format!("unsupported header line: {line}")));
     }
 
+    let (body_text, body_namespaces) = extract_do_namespaces(&body_text)?;
+    for (prefix, uri) in body_namespaces {
+        add_namespace(&mut namespaces, &prefix, &uri)?;
+    }
     let body = parse_expression(&body_text)?;
     Ok(Script {
         items,
         imports,
         output,
+        output_writer,
         output_options,
+        namespaces,
         body,
     })
 }
 
-fn parse_output_declaration(text: &str) -> Result<(String, Option<Value>), DwError> {
+fn parse_output_declaration(
+    text: &str,
+) -> Result<(String, Option<String>, Option<Value>), DwError> {
     let mut chars = text.trim().char_indices().peekable();
     let mut mime = String::new();
     while let Some((_, character)) = chars.peek().copied() {
@@ -148,13 +278,30 @@ fn parse_output_declaration(text: &str) -> Result<(String, Option<Value>), DwErr
         return Err(DwError::new("output declaration is missing a MIME type"));
     }
 
-    let rest = chars
+    let mut rest = chars
         .peek()
-        .map(|(index, _)| &text[*index..])
-        .unwrap_or("")
-        .trim();
+        .map(|(index, _)| text[*index..].trim().to_string())
+        .unwrap_or_default();
     if rest.is_empty() {
-        return Ok((mime, None));
+        return Ok((mime, None, None));
+    }
+
+    let mut writer = None;
+    if let Some(after) = rest.strip_prefix("with") {
+        if after.starts_with(char::is_whitespace) || after.is_empty() {
+            let after = after.trim_start();
+            if after.is_empty() {
+                return Err(DwError::new("output writer is missing"));
+            }
+            let end = after
+                .find(|character: char| character.is_whitespace() || character == ',')
+                .unwrap_or(after.len());
+            writer = Some(after[..end].to_string());
+            rest = after[end..].trim().to_string();
+        }
+    }
+    if rest.is_empty() {
+        return Ok((mime, writer, None));
     }
 
     let mut entries = Vec::new();
@@ -247,7 +394,7 @@ fn parse_output_declaration(text: &str) -> Result<(String, Option<Value>), DwErr
         };
         entries.push((key.to_string(), value));
     }
-    Ok((mime, Some(Value::Object(entries))))
+    Ok((mime, writer, Some(Value::Object(entries))))
 }
 
 /// Splits `name = value` without splitting comparison operators.
@@ -1192,17 +1339,45 @@ impl Parser {
             let key = match self.peek().clone() {
                 Token::Ident(name) => {
                     self.advance();
+                    let key = if self.peek() == &Token::Hash {
+                        self.advance();
+                        let local = match self.advance() {
+                            Token::Ident(local) | Token::Str(local) => local,
+                            other => {
+                                return Err(DwError::new(format!(
+                                    "expected local name, found {other:?}"
+                                )))
+                            }
+                        };
+                        format!("{name}#{local}")
+                    } else {
+                        name
+                    };
                     if self.peek() != &Token::Colon {
                         return Err(self.error("expected ':' after key"));
                     }
-                    Expr::String(name)
+                    Expr::String(key)
                 }
                 Token::Str(text) => {
                     self.advance();
+                    let key = if self.peek() == &Token::Hash {
+                        self.advance();
+                        let local = match self.advance() {
+                            Token::Ident(local) | Token::Str(local) => local,
+                            other => {
+                                return Err(DwError::new(format!(
+                                    "expected local name, found {other:?}"
+                                )))
+                            }
+                        };
+                        format!("{text}#{local}")
+                    } else {
+                        text
+                    };
                     if self.peek() != &Token::Colon {
                         return Err(self.error("expected ':' after key"));
                     }
-                    Expr::String(text)
+                    Expr::String(key)
                 }
                 Token::Number(text) => {
                     self.advance();

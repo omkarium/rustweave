@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
 
-use super::{bool_option, object_entries, string_option, validate_encoding};
+use super::{bool_option, namespace_key, object_entries, string_option, validate_encoding};
 use crate::error::DwError;
 use crate::value::Value;
 
@@ -234,11 +234,13 @@ fn write_xml_element(
     name: &str,
     value: &Value,
     options: &XmlOptions,
+    namespaces: &[(String, String)],
+    scope: &[String],
     level: usize,
 ) -> Result<(), DwError> {
     if let Value::Array(items) = value {
         for item in items {
-            write_xml_element(out, name, item, options, level)?;
+            write_xml_element(out, name, item, options, namespaces, scope, level)?;
         }
         return Ok(());
     }
@@ -246,6 +248,22 @@ fn write_xml_element(
     let mut attributes = Vec::new();
     let mut text = None;
     let mut children = Vec::new();
+    let mut child_scope = scope.to_vec();
+    let element_name = match namespace_key(name, namespaces) {
+        Some((prefix, local)) => {
+            if !scope.iter().any(|existing| existing == prefix) {
+                let uri = namespaces
+                    .iter()
+                    .find(|(declared, _)| declared == prefix)
+                    .map(|(_, uri)| uri.clone())
+                    .unwrap_or_default();
+                attributes.push((format!("xmlns:{prefix}"), uri));
+                child_scope.push(prefix.to_string());
+            }
+            format!("{prefix}:{local}")
+        }
+        None => name.to_string(),
+    };
     match value {
         Value::Object(entries) => {
             for (key, item) in entries {
@@ -273,7 +291,7 @@ fn write_xml_element(
         out.push_str(&"  ".repeat(level));
     }
     out.push('<');
-    out.push_str(name);
+    out.push_str(&element_name);
     for (attribute, value) in &attributes {
         out.push(' ');
         out.push_str(attribute);
@@ -291,19 +309,31 @@ fn write_xml_element(
     }
     let had_children = !children.is_empty();
     for (child_name, child) in children {
-        write_xml_element(out, child_name, child, options, level + 1)?;
+        write_xml_element(
+            out,
+            child_name,
+            child,
+            options,
+            namespaces,
+            &child_scope,
+            level + 1,
+        )?;
     }
     if options.indent && had_children {
         out.push('\n');
         out.push_str(&"  ".repeat(level));
     }
     out.push_str("</");
-    out.push_str(name);
+    out.push_str(&element_name);
     out.push('>');
     Ok(())
 }
 
-pub(crate) fn write_xml(value: &Value, properties: Option<&Value>) -> Result<String, DwError> {
+pub(crate) fn write_xml(
+    value: &Value,
+    properties: Option<&Value>,
+    namespaces: &[(String, String)],
+) -> Result<String, DwError> {
     let options = XmlOptions::read(properties)?;
     let entries = object_entries(value)?;
     if entries.len() != 1 {
@@ -321,10 +351,10 @@ pub(crate) fn write_xml(value: &Value, properties: Option<&Value>) -> Result<Str
             return Err(DwError::new("XML output requires a root element"));
         }
         for item in items {
-            write_xml_element(&mut out, name, item, &options, 0)?;
+            write_xml_element(&mut out, name, item, &options, namespaces, &[], 0)?;
         }
     } else {
-        write_xml_element(&mut out, name, root, &options, 0)?;
+        write_xml_element(&mut out, name, root, &options, namespaces, &[], 0)?;
     }
     Ok(out)
 }

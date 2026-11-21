@@ -32,6 +32,7 @@ pub enum Token {
     Dot,
     DotDot,
     At,
+    Hash,
     Semi,
     Question,
     Op(String),
@@ -149,6 +150,10 @@ pub fn lex(input: &str) -> Result<Vec<Token>, DwError> {
             }
             '@' => {
                 tokens.push(Token::At);
+                pos += 1;
+            }
+            '#' => {
+                tokens.push(Token::Hash);
                 pos += 1;
             }
             '&' => {

@@ -170,9 +170,15 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 ## What is supported
 
 - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
+- User-defined `type` aliases over built-in, object, array, union, intersection, nested, and
+  forward-referenced types, with `as` coercion and structural `is` checks.
+- `ns` prefix declarations in headers and `do` blocks, `prefix#name` keys, and XML namespace
+  declarations.
 - JSON, CSV, XML, YAML, text, and binary input and output, with reader and writer options.
+- Output format IDs `json`, `csv`, `xml`, `dw`, and `text`, plus `output ... with writer`.
 - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, `using`, object spread, value
-  metadata, regex literals, selectors, prepend, coercing equality, and ranges.
+  metadata, declared types, namespace prefixes, regex literals, selectors, prepend, coercing
+  equality, and ranges.
 - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
   `dw::core::URL`, and `dw::core::Types` function surface.

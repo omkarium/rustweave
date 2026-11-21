@@ -121,9 +121,13 @@
 //! # What is supported
 //!
 //! - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
-//! - JSON, CSV, XML, YAML, text, and binary input and output.
+//! - User-defined `type` aliases over built-in, object, array, union, intersection, nested, and
+//!   forward-referenced types, with `as` coercion and structural `is` checks.
+//! - `ns` prefix declarations in headers and `do` blocks, `prefix#name` keys, and XML namespace
+//!   declarations.
+//! - JSON, CSV, XML, YAML, text, and binary input and output, plus output format IDs and writers.
 //! - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, `using`, object spread, value
-//!   metadata, regex literals and ranges.
+//!   metadata, declared types, namespaces, regex literals and ranges.
 //! - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
 //!   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
 //!   `dw::core::URL`, and `dw::core::Types` function surface.
@@ -190,6 +194,15 @@ pub use value::Value;
 use parser::HeaderItem;
 use runtime::{Closure, Env, RValue};
 
+/// A value together with the script's output declaration.
+type EvaluatedScript = (
+    Value,
+    Option<String>,
+    Option<String>,
+    Option<Value>,
+    Vec<(String, String)>,
+);
+
 /// A reusable interpreter that keeps variables between evaluations.
 ///
 /// Use [`Interp::with_variable`] to seed values, then call [`Interp::eval`]
@@ -221,14 +234,15 @@ impl Interp {
     /// Returns [`DwError`] for invalid JSON, syntax errors, or evaluation
     /// errors such as unresolved names or bad operand types.
     pub fn eval(&self, script: &str, inputs: &[(&str, &str)]) -> Result<Value, DwError> {
-        self.eval_parsed(script, inputs).map(|(value, _, _)| value)
+        self.eval_parsed(script, inputs)
+            .map(|(value, _, _, _, _)| value)
     }
 
     fn eval_parsed(
         &self,
         script: &str,
         inputs: &[(&str, &str)],
-    ) -> Result<(Value, Option<String>, Option<Value>), DwError> {
+    ) -> Result<EvaluatedScript, DwError> {
         let parsed = parser::parse_script(script)?;
         let mut env = self.globals.clone();
         let mut modules: Vec<&str> = parsed.imports.iter().map(String::as_str).collect();
@@ -243,6 +257,7 @@ impl Interp {
                 .map_err(|error| DwError::new(format!("input '{name}': {error}")))?;
             env = env.extend(*name, RValue::Val(value));
         }
+        let mut type_names = std::collections::HashSet::new();
         for item in &parsed.items {
             match item {
                 HeaderItem::Var(name, expr) => {
@@ -250,6 +265,9 @@ impl Interp {
                     env = env.extend(name.clone(), value);
                 }
                 HeaderItem::Type(name, text) => {
+                    if !type_names.insert(name.clone()) {
+                        return Err(DwError::new(format!("duplicate type '{name}'")));
+                    }
                     let value = types::parse_declaration(name, text)?;
                     env = env.extend(name.clone(), RValue::Val(Value::Type(Box::new(value))));
                 }
@@ -273,7 +291,13 @@ impl Interp {
         }
         let value = eval::eval(&parsed.body, &env)?;
         let value = eval::as_value(value)?;
-        Ok((value, parsed.output, parsed.output_options))
+        Ok((
+            value,
+            parsed.output,
+            parsed.output_writer,
+            parsed.output_options,
+            parsed.namespaces,
+        ))
     }
 
     /// Evaluates `script` and returns text in the declared output format.
@@ -284,13 +308,12 @@ impl Interp {
     ///
     /// Returns [`DwError`] under the same conditions as [`Interp::eval`].
     pub fn run(&self, script: &str, inputs: &[(&str, &str)]) -> Result<String, DwError> {
-        let (value, output, options) = self.eval_parsed(script, inputs)?;
-        let content_type = output.as_deref().unwrap_or("application/json");
-        stdlib::write_output(
-            &value,
-            &crate::formats::normalize_mime(content_type),
-            options.as_ref(),
-        )
+        let (value, output, writer, options, namespaces) = self.eval_parsed(script, inputs)?;
+        let content_type = match writer.as_deref() {
+            Some(writer) => crate::formats::resolve_writer(writer)?,
+            None => crate::formats::resolve_format(output.as_deref().unwrap_or("json")),
+        };
+        stdlib::write_output(&value, &content_type, options.as_ref(), &namespaces)
     }
 }
 

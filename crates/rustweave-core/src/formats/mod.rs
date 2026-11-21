@@ -23,6 +23,79 @@ pub(crate) fn normalize_mime(text: &str) -> String {
         .to_ascii_lowercase()
 }
 
+/// Maps a format ID such as `json` to its MIME type.
+///
+/// Other text is treated as a MIME type and only normalized.
+pub(crate) fn resolve_format(text: &str) -> String {
+    match normalize_mime(text).as_str() {
+        "json" => "application/json".to_string(),
+        "csv" => "application/csv".to_string(),
+        "xml" => "application/xml".to_string(),
+        "dw" => "application/dw".to_string(),
+        "text" => "text/plain".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Maps a writer name from an `output ... with writer` clause to its MIME type.
+pub(crate) fn resolve_writer(text: &str) -> Result<String, DwError> {
+    match normalize_mime(text).as_str() {
+        "json" => Ok("application/json".to_string()),
+        "csv" => Ok("application/csv".to_string()),
+        "xml" => Ok("application/xml".to_string()),
+        "dw" => Ok("application/dw".to_string()),
+        "text" => Ok("text/plain".to_string()),
+        other => Err(DwError::new(format!("unknown writer '{other}'"))),
+    }
+}
+
+/// Splits a `prefix#name` key when the prefix is a declared namespace.
+pub(crate) fn namespace_key<'a>(
+    key: &'a str,
+    namespaces: &[(String, String)],
+) -> Option<(&'a str, &'a str)> {
+    let (prefix, local) = key.split_once('#')?;
+    namespaces
+        .iter()
+        .any(|(declared, _)| declared == prefix)
+        .then_some((prefix, local))
+}
+
+/// Returns a copy of a value with declared namespace prefixes removed from keys.
+pub(crate) fn strip_namespace_keys(value: &Value, namespaces: &[(String, String)]) -> Value {
+    if namespaces.is_empty() {
+        return value.clone();
+    }
+    match value {
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| strip_namespace_keys(item, namespaces))
+                .collect(),
+        ),
+        Value::Object(entries) => Value::Object(
+            entries
+                .iter()
+                .map(|(key, item)| {
+                    let key = namespace_key(key, namespaces)
+                        .map(|(_, local)| local.to_string())
+                        .unwrap_or_else(|| key.clone());
+                    (key, strip_namespace_keys(item, namespaces))
+                })
+                .collect(),
+        ),
+        Value::Meta(inner, entries) => Value::Meta(
+            Box::new(strip_namespace_keys(inner, namespaces)),
+            entries.clone(),
+        ),
+        Value::Formatted(inner, display) => Value::Formatted(
+            Box::new(strip_namespace_keys(inner, namespaces)),
+            display.clone(),
+        ),
+        other => other.clone(),
+    }
+}
+
 pub(super) fn object_entries(value: &Value) -> Result<&[(String, Value)], DwError> {
     match value {
         Value::Object(entries) => Ok(entries),

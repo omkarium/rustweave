@@ -8,6 +8,7 @@ use crate::error::DwError;
 use crate::number::Number;
 use crate::runtime::{Closure, Env, RValue};
 use crate::stdlib;
+use crate::types::{TypeField, TypeValue};
 use crate::value::Value;
 
 /// Evaluates an expression in an environment.
@@ -201,7 +202,10 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
                 Some(Value::Object(entries)) => (None, Some(entries)),
                 other => (other, None),
             };
-            let value = cast(value, type_name, cast_options.as_ref())?;
+            let value = match declared_type(type_name, env) {
+                Some(type_value) => cast_to_type(value, &type_value, cast_options.as_ref(), env)?,
+                None => cast(value, type_name, cast_options.as_ref())?,
+            };
             Ok(RValue::Val(match metadata {
                 Some(entries) => value.with_metadata(entries),
                 None => value,
@@ -209,7 +213,11 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
         }
         Expr::Is(inner, type_name) => {
             let value = as_value(eval(inner, env)?)?;
-            Ok(RValue::Val(Value::Bool(is_type(&value, type_name))))
+            let matches = match declared_type(type_name, env) {
+                Some(type_value) => is_type_value(&value, &type_value, env)?,
+                None => is_type(&value, type_name),
+            };
+            Ok(RValue::Val(Value::Bool(matches)))
         }
         Expr::Default(left, right) => {
             let value = as_value(eval(left, env)?)?;
@@ -1536,6 +1544,219 @@ fn is_type(value: &Value, type_name: &str) -> bool {
         "Key" => matches!(value, Value::Key(_)),
         "Type" => matches!(value, Value::Type(_)),
         _ => false,
+    }
+}
+
+/// Returns a declared type bound to `name`, if any.
+fn declared_type(name: &str, env: &Env) -> Option<TypeValue> {
+    match env.lookup(name) {
+        Some(RValue::Val(Value::Type(value))) => Some((*value).clone()),
+        _ => None,
+    }
+}
+
+/// Expands aliases and forward references in a type expression.
+fn resolve_type(value: &TypeValue, env: &Env, depth: usize) -> Result<TypeValue, DwError> {
+    if depth > 64 {
+        return Err(DwError::new("type alias chain is too deep"));
+    }
+    match value {
+        TypeValue::Declared { inner, .. } => resolve_type(inner, env, depth + 1),
+        TypeValue::Ref(name) => {
+            if let Some(declared) = declared_type(name, env) {
+                resolve_type(&declared, env, depth + 1)
+            } else if let Some(builtin) = crate::types::builtin(name) {
+                Ok(builtin)
+            } else {
+                Err(DwError::new(format!("unknown type '{name}'")))
+            }
+        }
+        TypeValue::Meta(inner, _) => resolve_type(inner, env, depth + 1),
+        TypeValue::Array(item) => Ok(TypeValue::Array(Box::new(resolve_type(
+            item,
+            env,
+            depth + 1,
+        )?))),
+        TypeValue::Union(items) => Ok(TypeValue::Union(
+            items
+                .iter()
+                .map(|item| resolve_type(item, env, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        TypeValue::Intersection(items) => Ok(TypeValue::Intersection(
+            items
+                .iter()
+                .map(|item| resolve_type(item, env, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        TypeValue::Object(fields) => {
+            let fields = fields
+                .iter()
+                .map(|field| {
+                    let attributes = field
+                        .attributes
+                        .iter()
+                        .map(|attribute| resolve_field(attribute, env, depth + 1))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(TypeField {
+                        value: resolve_type(&field.value, env, depth + 1)?,
+                        attributes,
+                        ..field.clone()
+                    })
+                })
+                .collect::<Result<Vec<_>, DwError>>()?;
+            Ok(TypeValue::Object(fields))
+        }
+        other => Ok(other.clone()),
+    }
+}
+
+/// Resolves the type of a field, including its nested fields.
+fn resolve_field(field: &TypeField, env: &Env, depth: usize) -> Result<TypeField, DwError> {
+    let attributes = field
+        .attributes
+        .iter()
+        .map(|attribute| resolve_field(attribute, env, depth + 1))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TypeField {
+        value: resolve_type(&field.value, env, depth + 1)?,
+        attributes,
+        ..field.clone()
+    })
+}
+
+/// Returns whether an object entry satisfies a declared field.
+fn field_matches(key: &str, field: &TypeField) -> bool {
+    key == field.name
+        || key
+            .split_once('#')
+            .map(|(_, local)| local == field.name)
+            .unwrap_or(false)
+}
+
+/// Converts a value to a declared type.
+fn cast_to_type(
+    value: Value,
+    type_value: &TypeValue,
+    options: Option<&Value>,
+    env: &Env,
+) -> Result<Value, DwError> {
+    let resolved = resolve_type(type_value, env, 0)?;
+    cast_resolved(value, &resolved, options)
+}
+
+/// Converts a value to an already-resolved type.
+fn cast_resolved(
+    value: Value,
+    type_value: &TypeValue,
+    options: Option<&Value>,
+) -> Result<Value, DwError> {
+    match type_value {
+        TypeValue::Any => Ok(value),
+        TypeValue::Null => Ok(Value::Null),
+        TypeValue::Array(_) => cast(value, "Array", options),
+        TypeValue::Object(fields) => {
+            let mut entries = match value {
+                Value::Object(entries) => entries,
+                other => {
+                    return Err(DwError::new(format!(
+                        "cannot convert {} to Object",
+                        other.type_name()
+                    )))
+                }
+            };
+            for field in fields {
+                match entries
+                    .iter()
+                    .position(|(key, _)| field_matches(key, field))
+                {
+                    Some(position) => {
+                        let current = entries[position].1.clone();
+                        entries[position].1 = cast_resolved(current, &field.value, options)?;
+                    }
+                    None if field.required => {
+                        return Err(DwError::new(format!(
+                            "missing required field '{}'",
+                            field.name
+                        )))
+                    }
+                    None => {}
+                }
+            }
+            Ok(Value::Object(entries))
+        }
+        TypeValue::Union(items) => {
+            for item in items {
+                if is_resolved(&value, item) {
+                    return Ok(value);
+                }
+            }
+            let mut last_error = None;
+            for item in items {
+                match cast_resolved(value.clone(), item, options) {
+                    Ok(casted) => return Ok(casted),
+                    Err(error) => last_error = Some(error),
+                }
+            }
+            Err(last_error.unwrap_or_else(|| DwError::new("cannot convert to union type")))
+        }
+        TypeValue::Intersection(items) => {
+            let mut current = value;
+            for item in items {
+                current = cast_resolved(current, item, options)?;
+            }
+            Ok(current)
+        }
+        TypeValue::Meta(inner, _) | TypeValue::Declared { inner, .. } => {
+            cast_resolved(value, inner, options)
+        }
+        TypeValue::Integer | TypeValue::Decimal => cast(value, "Number", options),
+        TypeValue::Literal(literal) => {
+            if value.unwrap_formatted() == literal {
+                Ok(value)
+            } else {
+                Err(DwError::new(format!(
+                    "expected literal {}",
+                    literal.key_string()
+                )))
+            }
+        }
+        other => cast(value, &other.display(), options),
+    }
+}
+
+/// Returns whether a value satisfies a declared type.
+fn is_type_value(value: &Value, type_value: &TypeValue, env: &Env) -> Result<bool, DwError> {
+    let resolved = resolve_type(type_value, env, 0)?;
+    Ok(is_resolved(value, &resolved))
+}
+
+/// Returns whether a value structurally satisfies an already-resolved type.
+fn is_resolved(value: &Value, type_value: &TypeValue) -> bool {
+    match type_value {
+        TypeValue::Any => true,
+        TypeValue::Nothing => false,
+        TypeValue::Null => matches!(value.unwrap_formatted(), Value::Null),
+        TypeValue::Array(_) => matches!(value.unwrap_formatted(), Value::Array(_)),
+        TypeValue::Object(fields) => match value.unwrap_formatted() {
+            Value::Object(entries) => fields.iter().all(|field| {
+                match entries
+                    .iter()
+                    .rev()
+                    .find(|(key, _)| field_matches(key, field))
+                {
+                    Some((_, item)) => is_resolved(item, &field.value),
+                    None => !field.required,
+                }
+            }),
+            _ => false,
+        },
+        TypeValue::Union(items) => items.iter().any(|item| is_resolved(value, item)),
+        TypeValue::Intersection(items) => items.iter().all(|item| is_resolved(value, item)),
+        TypeValue::Meta(inner, _) | TypeValue::Declared { inner, .. } => is_resolved(value, inner),
+        TypeValue::Integer | TypeValue::Decimal => is_type(value, "Number"),
+        TypeValue::Literal(literal) => value.unwrap_formatted() == literal,
+        other => is_type(value, &other.display()),
     }
 }
 

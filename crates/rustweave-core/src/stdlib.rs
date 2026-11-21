@@ -3954,13 +3954,14 @@ fn write_value(args: &[RValue]) -> Result<Value, DwError> {
     let value = value(args, 0)?;
     let content_type = content_type(args, 1, "application/dw");
     let properties = optional_object(args, 2);
-    write_content(value, &content_type, properties.as_ref())
+    write_content(value, &content_type, properties.as_ref(), &[])
 }
 
 fn write_content(
     value: &Value,
     content_type: &str,
     properties: Option<&Value>,
+    namespaces: &[(String, String)],
 ) -> Result<Value, DwError> {
     match content_type {
         "" | "application/json" | "text/json" => {
@@ -3969,7 +3970,8 @@ fn write_content(
                 skip_null_on: property_string(properties, "skipNullOn"),
                 duplicate_key_as_array: property_bool(properties, "duplicateKeyAsArray", false),
             };
-            Ok(Value::String(crate::json::write_with(value, &options)))
+            let value = crate::formats::strip_namespace_keys(value, namespaces);
+            Ok(Value::String(crate::json::write_with(&value, &options)))
         }
         "application/dw" | "application/x-dw" | "text/x-dw" => {
             Ok(Value::String(dw_write(value, 0)))
@@ -3981,9 +3983,9 @@ fn write_content(
         "application/csv" | "text/csv" => {
             Ok(Value::String(crate::formats::write_csv(value, properties)?))
         }
-        "application/xml" | "text/xml" => {
-            Ok(Value::String(crate::formats::write_xml(value, properties)?))
-        }
+        "application/xml" | "text/xml" => Ok(Value::String(crate::formats::write_xml(
+            value, properties, namespaces,
+        )?)),
         "application/yaml" | "application/x-yaml" | "text/yaml" => Ok(Value::String(
             crate::formats::write_yaml(value, properties)?,
         )),
@@ -3996,8 +3998,9 @@ pub(crate) fn write_output(
     value: &Value,
     content_type: &str,
     properties: Option<&Value>,
+    namespaces: &[(String, String)],
 ) -> Result<String, DwError> {
-    match write_content(value, content_type, properties)? {
+    match write_content(value, content_type, properties, namespaces)? {
         Value::String(text) => Ok(text),
         other => Ok(other.key_string()),
     }

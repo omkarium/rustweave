@@ -114,7 +114,9 @@ $ echo $?
 
 ## Scope
 
-The CLI supports JSON, CSV, XML, YAML, text, and binary output. The parser, evaluator, exact decimal arithmetic, standard library, and
+The CLI supports JSON, CSV, XML, YAML, text, and binary output, including the `json`, `csv`, `xml`,
+`dw`, and `text` output format IDs and `output ... with writer`. The parser, evaluator, exact
+decimal arithmetic, standard library, and
 supported/unsupported feature list are provided by the `rustweave-core` crate; see its
 documentation. Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary are
 not supported yet. `dw::Runtime` is out of scope.
