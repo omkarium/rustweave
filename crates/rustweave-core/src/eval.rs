@@ -167,7 +167,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
                 None => None,
             };
             let (cast_options, metadata) = match options {
-                Some(Value::Object(entries)) if entries.iter().any(|(key, _)| is_cast_option(key)) => {
+                Some(Value::Object(entries)) if is_cast_options(&entries, &value, type_name) => {
                     (Some(Value::Object(entries)), None)
                 }
                 Some(Value::Object(entries)) => (None, Some(entries)),
@@ -247,12 +247,14 @@ pub fn eval(expr: &Expr, env: &Env) -> Result<RValue, DwError> {
     }
 }
 
-/// Reports whether an `as Type { ... }` key selects cast options rather than metadata.
-fn is_cast_option(key: &str) -> bool {
-    matches!(
-        key,
-        "format" | "unit" | "base" | "pattern" | "locale" | "timeZone" | "timezone"
-    )
+/// Reports whether an `as Type { ... }` map selects cast options rather than metadata.
+fn is_cast_options(entries: &[(String, Value)], value: &Value, type_name: &str) -> bool {
+    entries.iter().any(|(key, _)| match key.as_str() {
+        "format" | "pattern" | "locale" | "timeZone" | "timezone" => true,
+        "base" => type_name == "Binary",
+        "unit" => matches!(value.unwrap_formatted(), Value::Period(_)),
+        _ => false,
+    })
 }
 
 /// Selects a field from an object, maps over an array, or propagates null.
@@ -1415,7 +1417,12 @@ fn cast(value: Value, type_name: &str, options: Option<&Value>) -> Result<Value,
     let format = pattern_from(options);
     match base {
         "Any" => Ok(value),
-        "String" => Ok(Value::String(temporal_string(&value, format.as_deref()))),
+        "String" => match value {
+            Value::Binary(bytes) => String::from_utf8(bytes)
+                .map(Value::String)
+                .map_err(|_| DwError::new("binary content is not valid UTF-8")),
+            other => Ok(Value::String(temporal_string(&other, format.as_deref()))),
+        },
         "Number" => match value {
             Value::Number(_) => Ok(value),
             Value::String(text) => Number::parse(&text)

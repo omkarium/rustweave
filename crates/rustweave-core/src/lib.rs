@@ -122,21 +122,22 @@
 //!
 //! - DataWeave expressions with `%dw 2.0` headers, imports, `var`, `fun`, overloads and defaults.
 //! - JSON, CSV, XML, YAML, text, and binary input and output.
-//! - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, regex literals and ranges.
+//! - Exact decimal numbers, arrays, objects, lambdas, `do`, `match`, `using`, object spread, value
+//!   metadata, regex literals and ranges.
 //! - The `dw::Core`, `dw::core::Arrays`, `dw::core::Strings`, `dw::core::Objects`,
 //!   `dw::core::Numbers`, `dw::core::Dates`, `dw::core::Periods`, `dw::core::Binaries`,
 //!   `dw::core::URL`, and `dw::core::Types` function surface.
-//! - The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`, and
-//!   `dw::util::Diff` utilities.
+//! - The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`,
+//!   `dw::util::Diff`, and `dw::util::Timer` utilities.
+//! - The `dw::Crypto` digest and HMAC helpers.
 //! - Date, time, period, time-zone, type, and binary values.
 //! - A reusable [`Interp`] and direct [`Value`]/[`json`] access.
 //!
 //! # What is not supported yet
 //!
-//! - Multipart, Crypto, other data formats, and timers.
-//! - `dw::Runtime` (`try`/`orElse`/`fail`) and value metadata.
+//! - Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary.
+//! - `dw::Runtime` (`try`/`orElse`/`fail`) and typed `using` declarations.
 //! - Lazy or streaming evaluation. This engine evaluates eagerly.
-//! - Object spread syntax.
 //! - The exact text of error messages is not part of the public contract, and regex behaviour
 //!   follows Rust's `regex` crate rather than `java.util.regex`.
 //!
@@ -165,6 +166,7 @@ pub mod functions;
 pub mod json;
 
 mod ast;
+mod crypto;
 mod error;
 mod eval;
 mod formats;

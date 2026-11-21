@@ -34,10 +34,19 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+aes-gcm.workspace = true
 chrono.workspace = true
 csv.workspace = true
+hkdf.workspace = true
+hmac.workspace = true
+md-5.workspace = true
 num-bigint.workspace = true
 num-traits.workspace = true
+pbkdf2.workspace = true
 quick-xml.workspace = true
+rand.workspace = true
 regex.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+subtle.workspace = true
 yaml-rust2.workspace = true

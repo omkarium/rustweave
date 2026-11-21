@@ -93,7 +93,9 @@ impl Value {
 
     /// Returns the metadata map as an owned list, or an empty list.
     pub fn metadata_entries(&self) -> Vec<(String, Value)> {
-        self.metadata().map(|entries| entries.to_vec()).unwrap_or_default()
+        self.metadata()
+            .map(|entries| entries.to_vec())
+            .unwrap_or_default()
     }
 
     /// Wraps a temporal value with the exact text used for direct JSON output.
@@ -446,7 +448,9 @@ impl fmt::Debug for Value {
             Value::Type(value) => write!(f, "{value}"),
             Value::Formatted(inner, display) => write!(f, "{inner:?} ({display})"),
             Value::Meta(inner, entries) => {
-                f.debug_map().entries(entries.iter().map(|(k, v)| (k, v))).finish()?;
+                f.debug_map()
+                    .entries(entries.iter().map(|(k, v)| (k, v)))
+                    .finish()?;
                 write!(f, " over {inner:?}")
             }
         }

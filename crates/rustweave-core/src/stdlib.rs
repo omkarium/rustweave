@@ -342,6 +342,19 @@ const NAMES: &[&str] = &[
     "mapOr",
     "andThen",
     "orElse",
+    "MD5",
+    "SHA1",
+    "hashWith",
+    "HMACWith",
+    "HMACBinary",
+    "currentMilliseconds",
+    "toMilliseconds",
+    "aesGcmEncrypt",
+    "aesGcmDecrypt",
+    "randomBytes",
+    "hkdfSha256",
+    "pbkdf2Sha256",
+    "constantTimeEquals",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -416,6 +429,25 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("mapOr", "mapOr"),
             ("andThen", "andThen"),
             ("orElse", "orElse"),
+            ("aesGcmEncrypt", "aesGcmEncrypt"),
+            ("aesGcmDecrypt", "aesGcmDecrypt"),
+            ("randomBytes", "randomBytes"),
+            ("hkdfSha256", "hkdfSha256"),
+            ("pbkdf2Sha256", "pbkdf2Sha256"),
+            ("constantTimeEquals", "constantTimeEquals"),
+        ],
+        "dw::Crypto" => &[
+            ("MD5", "MD5"),
+            ("SHA1", "SHA1"),
+            ("hashWith", "hashWith"),
+            ("HMACWith", "HMACWith"),
+            ("HMACBinary", "HMACBinary"),
+        ],
+        "dw::util::Timer" => &[
+            ("currentMilliseconds", "currentMilliseconds"),
+            ("duration", "timerDuration"),
+            ("time", "timerTime"),
+            ("toMilliseconds", "toMilliseconds"),
         ],
         _ => &[],
     }
@@ -695,6 +727,56 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "unwrapOrElse" => extra_unwrap_or_else(args),
         "mapOr" => extra_map_or(args),
         "andThen" => extra_and_then(args),
+        "MD5" => crate::crypto::md5(value(args, 0)?),
+        "SHA1" => crate::crypto::sha1(value(args, 0)?),
+        "hashWith" => crate::crypto::hash_with(value(args, 0)?, &string(args, 1)?),
+        "HMACWith" => crate::crypto::hmac_with(value(args, 0)?, value(args, 1)?, &string(args, 2)?),
+        "HMACBinary" => {
+            crate::crypto::hmac_binary(value(args, 0)?, value(args, 1)?, &string(args, 2)?)
+        }
+        "currentMilliseconds" => Ok(Value::Number(Number::from_i64(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis() as i64)
+                .unwrap_or(0),
+        ))),
+        "toMilliseconds" => timer_to_milliseconds(args),
+        "timerDuration" => timer_duration(args),
+        "timerTime" => timer_wall_clock(args),
+        "aesGcmEncrypt" => crate::crypto::aes_gcm_encrypt(
+            value(args, 0)?,
+            value(args, 1)?,
+            value(args, 2)?,
+            optional_value(args, 3),
+        ),
+        "aesGcmDecrypt" => crate::crypto::aes_gcm_decrypt(
+            value(args, 0)?,
+            value(args, 1)?,
+            value(args, 2)?,
+            optional_value(args, 3),
+        ),
+        "randomBytes" => crate::crypto::random_bytes(integer(args, 0)?),
+        "hkdfSha256" => crate::crypto::hkdf_sha256(
+            value(args, 0)?,
+            optional_value(args, 1),
+            optional_value(args, 2),
+            args.get(3)
+                .map(|_| integer(args, 3))
+                .transpose()?
+                .unwrap_or(32),
+        ),
+        "pbkdf2Sha256" => crate::crypto::pbkdf2_sha256(
+            value(args, 0)?,
+            value(args, 1)?,
+            integer(args, 2)?,
+            args.get(3)
+                .map(|_| integer(args, 3))
+                .transpose()?
+                .unwrap_or(32),
+        ),
+        "constantTimeEquals" => {
+            crate::crypto::constant_time_equals(value(args, 0)?, value(args, 1)?)
+        }
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -1137,6 +1219,7 @@ fn size_of(args: &[RValue]) -> Result<Value, DwError> {
         Value::Object(entries) => entries.len(),
         Value::Number(number) => number.to_string().chars().count(),
         Value::Bool(value) => value.to_string().len(),
+        Value::Binary(bytes) => bytes.len(),
         other => crate::json::write(other).chars().count(),
     };
     Ok(Value::Number(Number::from_usize(size)))
@@ -5759,6 +5842,72 @@ fn log_with(args: &[RValue]) -> Result<Value, DwError> {
     let prefix = value(args, 1)?.key_string();
     eprintln!("[{level}] {prefix}: {}", crate::json::write(&logged));
     Ok(logged)
+}
+
+fn timer_to_milliseconds(args: &[RValue]) -> Result<Value, DwError> {
+    match value(args, 0)?.unwrap_formatted() {
+        Value::DateTime(value) => {
+            let seconds = crate::temporal::timestamp_seconds(value)?;
+            let millis = (value.time.nano / 1_000_000) as i64;
+            Ok(Value::Number(Number::from_i64(seconds * 1000 + millis)))
+        }
+        other => Err(DwError::new(format!(
+            "toMilliseconds expects a DateTime, found {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn timer_callable(args: &[RValue]) -> Result<&RValue, DwError> {
+    match args.first() {
+        Some(
+            callable @ (RValue::Func(_)
+            | RValue::Builtin(_)
+            | RValue::Overloads(_)
+            | RValue::Sequence(_, _)),
+        ) => Ok(callable),
+        Some(other) => {
+            let type_name = match other {
+                RValue::Val(value) => value.type_name(),
+                RValue::Regex(_) => "Regex",
+                _ => "value",
+            };
+            Err(DwError::new(format!(
+                "expected a zero-argument function, found {type_name}"
+            )))
+        }
+        None => Err(DwError::new("missing function argument")),
+    }
+}
+
+fn elapsed_milliseconds(start: SystemTime) -> i64 {
+    start
+        .elapsed()
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn timer_duration(args: &[RValue]) -> Result<Value, DwError> {
+    let callable = timer_callable(args)?;
+    let start = SystemTime::now();
+    let result = crate::eval::as_value(crate::eval::call_value(callable, &[])?)?;
+    let elapsed = elapsed_milliseconds(start);
+    Ok(Value::Object(vec![
+        ("time".to_string(), Value::Number(Number::from_i64(elapsed))),
+        ("result".to_string(), result),
+    ]))
+}
+
+fn timer_wall_clock(args: &[RValue]) -> Result<Value, DwError> {
+    let callable = timer_callable(args)?;
+    let start = crate::temporal::now();
+    let result = crate::eval::as_value(crate::eval::call_value(callable, &[])?)?;
+    let end = crate::temporal::now();
+    Ok(Value::Object(vec![
+        ("start".to_string(), Value::DateTime(start)),
+        ("result".to_string(), result),
+        ("end".to_string(), Value::DateTime(end)),
+    ]))
 }
 
 fn type_arg(args: &[RValue], index: usize) -> Result<&crate::types::TypeValue, DwError> {

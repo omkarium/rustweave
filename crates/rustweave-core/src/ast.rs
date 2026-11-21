@@ -168,9 +168,7 @@ pub fn contains_placeholder(expr: &Expr) -> bool {
                 || contains_placeholder(body)
         }
         Expr::ObjectSpread(key, value, tail) => {
-            contains_placeholder(key)
-                || contains_placeholder(value)
-                || contains_placeholder(tail)
+            contains_placeholder(key) || contains_placeholder(value) || contains_placeholder(tail)
         }
         Expr::MetaKey(target, _) | Expr::MetaAll(target) => contains_placeholder(target),
         Expr::Interp(parts) => parts.iter().any(|part| match part {

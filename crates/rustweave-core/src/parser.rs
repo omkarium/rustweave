@@ -793,9 +793,7 @@ impl Parser {
                 }
             };
             if self.peek() == &Token::Colon {
-                return Err(DwError::new(
-                    "typed using declarations are not supported",
-                ));
+                return Err(DwError::new("typed using declarations are not supported"));
             }
             if !matches!(self.peek(), Token::Op(op) if op == "=") {
                 return Err(self.error("expected '=' in using declaration"));

@@ -32,10 +32,10 @@ var n = 100
 ---
 using (n = 3) (using (n = 8) n) + n"####;
     assert_eq!(rustweave_core::run(script, &[]).unwrap(), "11");
-    assert_eq!(run_result("using (n = 3) missing").is_err(), true);
-    assert_eq!(run_result("using (a = b, b = 2) a").is_err(), true);
-    assert_eq!(run_result("using (a = 1, a = 2) a").is_err(), true);
-    assert_eq!(run_result("using () 1").is_err(), true);
+    assert!(run_result("using (n = 3) missing").is_err());
+    assert!(run_result("using (a = b, b = 2) a").is_err());
+    assert!(run_result("using (a = 1, a = 2) a").is_err());
+    assert!(run_result("using () 1").is_err());
 }
 
 #[test]
@@ -88,10 +88,7 @@ var field = "code"
         rustweave_core::run(dynamic, &[]).unwrap(),
         "{\n  \"code\": \"Z\",\n  \"size\": 3\n}"
     );
-    assert_eq!(
-        run("{a: 1 ~ {a: 9}}"),
-        "{\n  \"a\": 1,\n  \"a\": 9\n}"
-    );
+    assert_eq!(run("{a: 1 ~ {a: 9}}"), "{\n  \"a\": 1,\n  \"a\": 9\n}");
 }
 
 #[test]
@@ -125,7 +122,10 @@ fn metadata_all_and_quoted_keys() {
         "[\n  \"first\",\n  \"second\"\n]"
     );
     assert_eq!(run("sizeOf((3).^) == 0"), "true");
-    assert_eq!(run("(3 as Number {\"custom-key\": 9}).^\"custom-key\""), "9");
+    assert_eq!(
+        run("(3 as Number {\"custom-key\": 9}).^\"custom-key\""),
+        "9"
+    );
 }
 
 #[test]

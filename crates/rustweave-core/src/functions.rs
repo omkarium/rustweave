@@ -1975,6 +1975,96 @@ impl Function {
         "Returns a fallback when a value is null."
     );
     index_function!(
+        EXTRA_COMMON_AES_GCM_ENCRYPT,
+        "dw::extra::Common",
+        "aesGcmEncrypt",
+        "Encrypts bytes with AES-GCM and appends the authentication tag."
+    );
+    index_function!(
+        EXTRA_COMMON_AES_GCM_DECRYPT,
+        "dw::extra::Common",
+        "aesGcmDecrypt",
+        "Decrypts AES-GCM ciphertext after verifying its tag."
+    );
+    index_function!(
+        EXTRA_COMMON_RANDOM_BYTES,
+        "dw::extra::Common",
+        "randomBytes",
+        "Returns cryptographically secure random bytes."
+    );
+    index_function!(
+        EXTRA_COMMON_HKDF_SHA256,
+        "dw::extra::Common",
+        "hkdfSha256",
+        "Derives key material with HKDF using HMAC-SHA-256."
+    );
+    index_function!(
+        EXTRA_COMMON_PBKDF2_SHA256,
+        "dw::extra::Common",
+        "pbkdf2Sha256",
+        "Derives key material with PBKDF2 using HMAC-SHA-256."
+    );
+    index_function!(
+        EXTRA_COMMON_CONSTANT_TIME_EQUALS,
+        "dw::extra::Common",
+        "constantTimeEquals",
+        "Compares byte content in time independent of the contents."
+    );
+    index_function!(
+        CRYPTO_MD5,
+        "dw::Crypto",
+        "MD5",
+        "Returns the lowercase hexadecimal MD5 digest of the content."
+    );
+    index_function!(
+        CRYPTO_SHA1,
+        "dw::Crypto",
+        "SHA1",
+        "Returns the lowercase hexadecimal SHA-1 digest of the content."
+    );
+    index_function!(
+        CRYPTO_HASH_WITH,
+        "dw::Crypto",
+        "hashWith",
+        "Returns the raw digest bytes for a named hash algorithm."
+    );
+    index_function!(
+        CRYPTO_HMAC_WITH,
+        "dw::Crypto",
+        "HMACWith",
+        "Returns a lowercase hexadecimal HMAC for a named algorithm."
+    );
+    index_function!(
+        CRYPTO_HMAC_BINARY,
+        "dw::Crypto",
+        "HMACBinary",
+        "Returns the raw HMAC bytes for a named algorithm."
+    );
+    index_function!(
+        TIMER_CURRENT_MILLISECONDS,
+        "dw::util::Timer",
+        "currentMilliseconds",
+        "Returns the current epoch time in milliseconds."
+    );
+    index_function!(
+        TIMER_DURATION,
+        "dw::util::Timer",
+        "duration",
+        "Runs a function and reports its elapsed milliseconds and result."
+    );
+    index_function!(
+        TIMER_TIME,
+        "dw::util::Timer",
+        "time",
+        "Runs a function and reports its wall-clock start, result, and end."
+    );
+    index_function!(
+        TIMER_TO_MILLISECONDS,
+        "dw::util::Timer",
+        "toMilliseconds",
+        "Converts a DateTime to epoch milliseconds."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2312,6 +2402,21 @@ impl Function {
         Self::EXTRA_COMMON_MAP_OR,
         Self::EXTRA_COMMON_AND_THEN,
         Self::EXTRA_COMMON_OR_ELSE,
+        Self::EXTRA_COMMON_AES_GCM_ENCRYPT,
+        Self::EXTRA_COMMON_AES_GCM_DECRYPT,
+        Self::EXTRA_COMMON_RANDOM_BYTES,
+        Self::EXTRA_COMMON_HKDF_SHA256,
+        Self::EXTRA_COMMON_PBKDF2_SHA256,
+        Self::EXTRA_COMMON_CONSTANT_TIME_EQUALS,
+        Self::CRYPTO_MD5,
+        Self::CRYPTO_SHA1,
+        Self::CRYPTO_HASH_WITH,
+        Self::CRYPTO_HMAC_WITH,
+        Self::CRYPTO_HMAC_BINARY,
+        Self::TIMER_CURRENT_MILLISECONDS,
+        Self::TIMER_DURATION,
+        Self::TIMER_TIME,
+        Self::TIMER_TO_MILLISECONDS,
         Self::DIFF_DIFF,
     ];
 }
