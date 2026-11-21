@@ -1,0 +1,10 @@
+{
+  "orders": [
+    { "id": "A-104", "region": "north", "status": "paid", "units": 3, "unitPrice": 12.5, "note": "express" },
+    { "id": "A-105", "region": "south", "status": "paid", "units": 2, "unitPrice": 8.0, "note": null },
+    { "id": "A-106", "region": "north", "status": "open", "units": 1, "unitPrice": 30.0, "note": "hold" },
+    { "id": "A-107", "region": "east", "status": "paid", "units": 5, "unitPrice": 4.25, "note": "gift" },
+    { "id": "A-108", "region": "south", "status": "cancelled", "units": 4, "unitPrice": 6.0, "note": null },
+    { "id": "A-109", "region": "north", "status": "paid", "units": 2, "unitPrice": 9.75, "note": "express" }
+  ]
+}

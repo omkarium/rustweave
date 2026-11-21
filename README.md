@@ -373,6 +373,9 @@ output application/json
 }
 ```
 
+Module-by-module examples with full scripts, commands, and expected output are in
+[`examples/`](examples/), including combined scenarios that use several modules at once.
+
 ## Structured formats
 
 CSV, XML, and YAML are available through `read`, `write`, `readUrl`, and the `output` header.

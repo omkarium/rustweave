@@ -1,0 +1,9 @@
+{
+  "records": [
+    { "path": "incoming/Harbor_Map.PDF", "size": "  12.5 KB", "owner": null, "tags": ["draft", "draft", "map"] },
+    { "path": "incoming/Tide_Chart.csv", "size": " 3 KB", "owner": "Ana", "tags": ["chart", "chart"] },
+    { "path": "archive/notes.txt", "size": "  no size", "owner": null, "tags": [] },
+    { "path": "incoming/Manifest.json", "size": " 0.75 KB", "owner": "Ravi", "tags": ["manifest"] },
+    { "path": "archive/Old_Map.PDF", "size": " 8 KB", "owner": "Ana", "tags": ["map"] }
+  ]
+}

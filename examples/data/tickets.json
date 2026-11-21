@@ -1,0 +1,10 @@
+{
+  "queue": [
+    { "ticket": "Q-31", "priority": 1, "minutes": 12, "zone": "north" },
+    { "ticket": "Q-32", "priority": 2, "minutes": 8, "zone": "south" },
+    { "ticket": "Q-33", "priority": 2, "minutes": 20, "zone": "east" },
+    { "ticket": "Q-34", "priority": 3, "minutes": 5, "zone": "north" },
+    { "ticket": "Q-35", "priority": 4, "minutes": 17, "zone": "west" },
+    { "ticket": "Q-36", "priority": 5, "minutes": 9, "zone": "south" }
+  ]
+}
