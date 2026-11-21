@@ -176,8 +176,9 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
   `dw::core::URL`, and `dw::core::Types` function surface.
 - The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`, and
   `dw::util::Diff` utilities.
-- The `dw::extra::Common` extension module for general-purpose array, object, number, string, and
-  function helpers. It is outside the compatibility surface and is imported explicitly.
+- The `dw::extra::Common` extension module for general-purpose array, object, number, string,
+  function, collection, and null helpers. It is outside the compatibility surface and is imported
+  explicitly.
 - Date, time, period, time-zone, type, and binary values.
 - A reusable `Interp` and direct `Value`/`json` access.
 

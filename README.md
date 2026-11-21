@@ -333,6 +333,46 @@ output application/json
 }
 ```
 
+The collection, string, and null helpers can be combined with the earlier helpers:
+
+```text
+%dw 2.0
+import * from dw::extra::Common
+output application/json
+---
+{
+  folded: fold([3, 4, 5], 0, (item, acc) -> acc + item),
+  windows: windows([1, 2, 3, 4], 2),
+  split: splitOnce("alpha/beta", "/"),
+  fallback: unwrapOr(null, "ready")
+}
+```
+
+```json
+{
+  "folded": 12,
+  "windows": [
+    [
+      1,
+      2
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      3,
+      4
+    ]
+  ],
+  "split": [
+    "alpha",
+    "beta"
+  ],
+  "fallback": "ready"
+}
+```
+
 ## Structured formats
 
 CSV, XML, and YAML are available through `read`, `write`, `readUrl`, and the `output` header.
@@ -510,7 +550,10 @@ empty: null
 
 `enumerate`, `range`, `sorted`, `reversed`, `chunk`, `compact`, `unique`, `fromEntries`, `assign`,
 `pick`, `omit`, `hasOwn`, `parseInt`, `parseFloat`, `toFixed`, `clamp`, `trunc`, `sign`, `title`,
-`lstrip`, `rstrip`, `zfill`, `partition`, `rpartition`, `identity`, `pipe`, `compose`
+`lstrip`, `rstrip`, `zfill`, `partition`, `rpartition`, `identity`, `pipe`, `compose`, `fold`,
+`filterMap`, `stepBy`, `position`, `rposition`, `dedup`, `windows`, `chunksExact`, `binarySearch`,
+`rotateLeft`, `rotateRight`, `swap`, `fill`, `truncate`, `splitOnce`, `rsplitOnce`, `stripPrefix`,
+`stripSuffix`, `unwrapOr`, `unwrapOrElse`, `mapOr`, `andThen`, `orElse`
 
 ## Error handling
 
