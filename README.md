@@ -150,7 +150,8 @@ name becomes a variable in the script. The default result is pretty-printed JSON
 
 The crate also exposes:
 
-- `rustweave_core::DwError` with a public `message` field, `Display`, and `std::error::Error`.
+- `rustweave_core::DwError` with public `message` and `kind` fields, `Display`, and
+  `std::error::Error`.
 - `rustweave_core::Interp`, a reusable interpreter that can carry variables between evaluations.
 - `rustweave_core::Value`, the runtime value type.
 - `rustweave_core::json::parse` and `rustweave_core::json::write` for JSON input and output.
@@ -592,6 +593,15 @@ A-1;2
 
 `currentMilliseconds`, `duration`, `time`, `toMilliseconds`
 
+### dw::Runtime
+
+`fail`, `failIf`, `try`, `orElse`, `orElseTry`
+
+Import the module with `import * from dw::Runtime`. `try` returns
+`{success: true, result: value}` or `{success: false, error: {kind, message}}`, while `orElse`
+unwraps a successful result and `orElseTry` always returns a result object. Error location and
+stack details are runtime-specific and are not part of the supported contract.
+
 ### dw::extra::Common
 
 `enumerate`, `range`, `sorted`, `reversed`, `chunk`, `compact`, `unique`, `fromEntries`, `assign`,
@@ -606,14 +616,15 @@ A-1;2
 
 Bad input, bad types, unresolved names, division by zero, invalid JSON, and unsupported syntax are
 reported as `Result` errors rather than panics. The exact wording of an error message is not part
-of the public contract.
+of the public contract. Scripts can capture errors with the `dw::Runtime` helpers and inspect the
+error class and message.
 
 ## Scope
 
 The current release targets JSON, CSV, XML, and YAML output and the expression and
 standard-library surface listed above, including date/time, period, binary, type, tree, coercion,
-value, math, URL, diff, crypto, and timer helpers. Multipart and other data formats are outside
-the current scope. `dw::Runtime` is out of scope.
+value, math, URL, diff, crypto, timer, and runtime error-handling helpers. Multipart and other
+data formats are outside the current scope.
 
 ## Development
 

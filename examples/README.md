@@ -2,7 +2,7 @@
 
 The module guides below put a complete DataWeave script and its expected output side by side. Each
 one uses every function listed for that module, so the examples show how the functions combine
-rather than isolating one call at a time. Together they cover all 345 namespace/name entries in the
+rather than isolating one call at a time. Together they cover all 350 namespace/name entries in the
 function index.
 
 Build once from the repository root:
@@ -45,6 +45,7 @@ of functions shown.
 [language.md](language.md) shows `using`, object head-tail spread, and value metadata.
 [types-and-namespaces.md](types-and-namespaces.md) shows declared types, namespace prefixes, and
 output format IDs.
+[runtime-errors.md](runtime-errors.md) shows `dw::Runtime` error capture and fallbacks.
 [combined.md](combined.md) combines Core, Arrays, Objects, and Tree in one inventory report.
 [scenarios.md](scenarios.md) contains three larger business-style pipelines with input files from
 [`data/`](data/).

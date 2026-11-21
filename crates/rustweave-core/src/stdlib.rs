@@ -19,6 +19,10 @@ use crate::runtime::RValue;
 use crate::value::Value;
 
 const NAMES: &[&str] = &[
+    "fail",
+    "failIf",
+    "try",
+    "orElseTry",
     "map",
     "filter",
     "reduce",
@@ -436,6 +440,13 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("pbkdf2Sha256", "pbkdf2Sha256"),
             ("constantTimeEquals", "constantTimeEquals"),
         ],
+        "dw::Runtime" => &[
+            ("fail", "fail"),
+            ("failIf", "failIf"),
+            ("try", "try"),
+            ("orElse", "runtimeOrElse"),
+            ("orElseTry", "orElseTry"),
+        ],
         "dw::Crypto" => &[
             ("MD5", "MD5"),
             ("SHA1", "SHA1"),
@@ -476,6 +487,9 @@ pub fn lambda_positions(name: &str) -> &'static [usize] {
         | "substringBy" | "filterArrayLeafs" | "filterObjectLeafs" | "filterTree"
         | "mapLeafValues" | "nodeExists" | "sort" | "sorted" => &[1],
         "update" | "mask" => &[2],
+        "failIf" => &[1],
+        "try" => &[0],
+        "runtimeOrElse" | "orElseTry" => &[1],
         "fold" | "mapOr" => &[2],
         "filterMap" | "position" | "rposition" | "dedup" | "unwrapOrElse" | "andThen" => &[1],
         "join" | "leftJoin" | "outerJoin" => &[2, 3],
@@ -723,6 +737,11 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "rsplitOnce" => extra_split_once(args, true),
         "stripPrefix" => extra_strip_affix(args, true),
         "stripSuffix" => extra_strip_affix(args, false),
+        "fail" => runtime_fail(args),
+        "failIf" => runtime_fail_if(args),
+        "try" => runtime_try(args),
+        "runtimeOrElse" => runtime_or_else(args),
+        "orElseTry" => runtime_or_else_try(args),
         "unwrapOr" | "orElse" => extra_unwrap_or(args),
         "unwrapOrElse" => extra_unwrap_or_else(args),
         "mapOr" => extra_map_or(args),
@@ -5568,6 +5587,90 @@ fn extra_strip_affix(args: &[RValue], prefix: bool) -> Result<Value, DwError> {
     match stripped {
         Some(remainder) => Ok(Value::String(remainder.to_string())),
         None => Ok(Value::Null),
+    }
+}
+
+/// Builds a failure `TryResult` from an error.
+fn try_failure(error: &DwError) -> Value {
+    Value::Object(vec![
+        ("success".to_string(), Value::Bool(false)),
+        (
+            "error".to_string(),
+            Value::Object(vec![
+                ("kind".to_string(), Value::String(error.kind.clone())),
+                ("message".to_string(), Value::String(error.message.clone())),
+            ]),
+        ),
+    ])
+}
+
+/// Returns the `success` field of a `TryResult`.
+fn try_success(value: &Value) -> Result<bool, DwError> {
+    match value.get("success") {
+        Some(Value::Bool(success)) => Ok(*success),
+        _ => Err(DwError::new("expected a TryResult")),
+    }
+}
+
+/// Raises a user error with an optional message.
+fn runtime_fail(args: &[RValue]) -> Result<Value, DwError> {
+    let message = match args.first() {
+        None => String::new(),
+        Some(RValue::Val(Value::Null)) => String::new(),
+        Some(RValue::Val(Value::String(text))) => text.clone(),
+        Some(RValue::Val(other)) => other.key_string(),
+        Some(_) => return Err(DwError::new("expected a String message")),
+    };
+    Err(DwError::with_kind("UserException", message))
+}
+
+/// Returns a value unless a predicate raises a user error.
+fn runtime_fail_if(args: &[RValue]) -> Result<Value, DwError> {
+    let input = value(args, 0)?.clone();
+    let predicate = function(args, 1)?;
+    let result = call_fn(predicate, vec![input.clone()])?;
+    if result.truthy() {
+        Err(DwError::with_kind("UserException", "Failed"))
+    } else {
+        Ok(input)
+    }
+}
+
+/// Runs a zero-argument function and captures success or failure.
+fn runtime_try(args: &[RValue]) -> Result<Value, DwError> {
+    let callable = function(args, 0)?;
+    match crate::eval::call_value(callable, &[]) {
+        Ok(value) => Ok(Value::Object(vec![
+            ("success".to_string(), Value::Bool(true)),
+            ("result".to_string(), crate::eval::as_value(value)?),
+        ])),
+        Err(error) => Ok(try_failure(&error)),
+    }
+}
+
+/// Returns a successful `TryResult` result or evaluates a fallback.
+fn runtime_or_else(args: &[RValue]) -> Result<Value, DwError> {
+    let primary = value(args, 0)?.clone();
+    let fallback = function(args, 1)?;
+    if try_success(&primary)? {
+        return Ok(primary.get("result").cloned().unwrap_or(Value::Null));
+    }
+    call_fn(fallback, Vec::new())
+}
+
+/// Returns the primary `TryResult` or wraps the fallback result or error.
+fn runtime_or_else_try(args: &[RValue]) -> Result<Value, DwError> {
+    let primary = value(args, 0)?.clone();
+    let fallback = function(args, 1)?;
+    if try_success(&primary)? {
+        return Ok(primary);
+    }
+    match call_fn(fallback, Vec::new()) {
+        Ok(value) => Ok(Value::Object(vec![
+            ("success".to_string(), Value::Bool(true)),
+            ("result".to_string(), value),
+        ])),
+        Err(error) => Ok(try_failure(&error)),
     }
 }
 

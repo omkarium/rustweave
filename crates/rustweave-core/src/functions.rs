@@ -1675,6 +1675,36 @@ impl Function {
         "Converts degrees to radians."
     );
     index_function!(
+        RUNTIME_FAIL,
+        "dw::Runtime",
+        "fail",
+        "Raises a user error with a message."
+    );
+    index_function!(
+        RUNTIME_FAIL_IF,
+        "dw::Runtime",
+        "failIf",
+        "Raises a user error when a predicate is true."
+    );
+    index_function!(
+        RUNTIME_TRY,
+        "dw::Runtime",
+        "try",
+        "Runs a zero-argument function and captures its result or error."
+    );
+    index_function!(
+        RUNTIME_OR_ELSE,
+        "dw::Runtime",
+        "orElse",
+        "Returns a successful result or evaluates a fallback."
+    );
+    index_function!(
+        RUNTIME_OR_ELSE_TRY,
+        "dw::Runtime",
+        "orElseTry",
+        "Returns a result or captures a fallback result or error."
+    );
+    index_function!(
         EXTRA_COMMON_ENUMERATE,
         "dw::extra::Common",
         "enumerate",
@@ -2418,6 +2448,11 @@ impl Function {
         Self::TIMER_TIME,
         Self::TIMER_TO_MILLISECONDS,
         Self::DIFF_DIFF,
+        Self::RUNTIME_FAIL,
+        Self::RUNTIME_FAIL_IF,
+        Self::RUNTIME_TRY,
+        Self::RUNTIME_OR_ELSE,
+        Self::RUNTIME_OR_ELSE_TRY,
     ];
 }
 

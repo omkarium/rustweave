@@ -185,6 +185,7 @@ assert!(rustweave_core::run("notAFunction(1)", &[]).is_err());
 - The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`,
   `dw::util::Diff`, and `dw::util::Timer` utilities.
 - The `dw::Crypto` digest and HMAC helpers.
+- The `dw::Runtime` error helpers `fail`, `failIf`, `try`, `orElse`, and `orElseTry`.
 - The `dw::extra::Common` extension module for general-purpose array, object, number, string,
   function, collection, null, and crypto helpers. It is outside the compatibility surface and is
   imported explicitly.
@@ -200,7 +201,7 @@ See the repository README for the full function list and CLI examples.
 ## What is not supported yet
 
 - Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary.
-- `dw::Runtime` (`try`/`orElse`/`fail`) is out of scope.
+- The rest of `dw::Runtime` (`eval`, `run`, `wait`, `prop`, and related helpers).
 - Typed `using` declarations and `xsiType`.
 - Lazy or streaming evaluation. This engine evaluates eagerly.
 - The exact text of error messages is not part of the public contract, and regex behaviour follows

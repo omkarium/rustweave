@@ -134,13 +134,15 @@
 //! - The `dw::util::Tree`, `dw::util::Coercions`, `dw::util::Values`, `dw::util::Math`,
 //!   `dw::util::Diff`, and `dw::util::Timer` utilities.
 //! - The `dw::Crypto` digest and HMAC helpers.
+//! - The `dw::Runtime` error helpers `fail`, `failIf`, `try`, `orElse`, and `orElseTry`.
 //! - Date, time, period, time-zone, type, and binary values.
 //! - A reusable [`Interp`] and direct [`Value`]/[`json`] access.
 //!
 //! # What is not supported yet
 //!
 //! - Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary.
-//! - `dw::Runtime` (`try`/`orElse`/`fail`) and typed `using` declarations.
+//! - The rest of `dw::Runtime` (`eval`, `run`, `wait`, `prop`, and related helpers), plus typed
+//!   `using` declarations.
 //! - Lazy or streaming evaluation. This engine evaluates eagerly.
 //! - The exact text of error messages is not part of the public contract, and regex behaviour
 //!   follows Rust's `regex` crate rather than `java.util.regex`.

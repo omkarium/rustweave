@@ -10,14 +10,33 @@ use std::fmt;
 pub struct DwError {
     /// Human-readable description of the problem.
     pub message: String,
+    /// A short error class name used by `dw::Runtime` results.
+    pub kind: String,
 }
 
 impl DwError {
     /// Creates an error from any value that can become a string.
     pub fn new(message: impl Into<String>) -> Self {
+        let message = message.into();
+        let kind = classify(&message).to_string();
+        DwError { message, kind }
+    }
+
+    /// Creates an error with an explicit error class name.
+    pub fn with_kind(kind: impl Into<String>, message: impl Into<String>) -> Self {
         DwError {
             message: message.into(),
+            kind: kind.into(),
         }
+    }
+}
+
+/// Returns a default error class name for an error message.
+fn classify(message: &str) -> &'static str {
+    if message.contains("division by zero") {
+        "DivisionByZeroException"
+    } else {
+        "RuntimeException"
     }
 }
 

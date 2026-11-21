@@ -119,7 +119,8 @@ The CLI supports JSON, CSV, XML, YAML, text, and binary output, including the `j
 decimal arithmetic, standard library, and
 supported/unsupported feature list are provided by the `rustweave-core` crate; see its
 documentation. Multipart and data formats other than JSON, CSV, XML, YAML, text, and binary are
-not supported yet. `dw::Runtime` is out of scope.
+not supported yet. The supported `dw::Runtime` subset covers `fail`, `failIf`, `try`, `orElse`,
+and `orElseTry`.
 
 The engine is provided by the `rustweave-core` crate.
 
