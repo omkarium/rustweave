@@ -1945,6 +1945,36 @@ impl Function {
         "Removes one trailing suffix from text."
     );
     index_function!(
+        EXTRA_COMMON_UNWRAP_OR,
+        "dw::extra::Common",
+        "unwrapOr",
+        "Returns a fallback when a value is null."
+    );
+    index_function!(
+        EXTRA_COMMON_UNWRAP_OR_ELSE,
+        "dw::extra::Common",
+        "unwrapOrElse",
+        "Computes a fallback when a value is null."
+    );
+    index_function!(
+        EXTRA_COMMON_MAP_OR,
+        "dw::extra::Common",
+        "mapOr",
+        "Transforms a value or returns a fallback when it is null."
+    );
+    index_function!(
+        EXTRA_COMMON_AND_THEN,
+        "dw::extra::Common",
+        "andThen",
+        "Transforms a value unless it is null."
+    );
+    index_function!(
+        EXTRA_COMMON_OR_ELSE,
+        "dw::extra::Common",
+        "orElse",
+        "Returns a fallback when a value is null."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2277,6 +2307,11 @@ impl Function {
         Self::EXTRA_COMMON_RSPLIT_ONCE,
         Self::EXTRA_COMMON_STRIP_PREFIX,
         Self::EXTRA_COMMON_STRIP_SUFFIX,
+        Self::EXTRA_COMMON_UNWRAP_OR,
+        Self::EXTRA_COMMON_UNWRAP_OR_ELSE,
+        Self::EXTRA_COMMON_MAP_OR,
+        Self::EXTRA_COMMON_AND_THEN,
+        Self::EXTRA_COMMON_OR_ELSE,
         Self::DIFF_DIFF,
     ];
 }

@@ -7,6 +7,8 @@ mod arrays;
 mod collections;
 #[path = "extra_common/functional.rs"]
 mod functional;
+#[path = "extra_common/null.rs"]
+mod null;
 #[path = "extra_common/numbers.rs"]
 mod numbers;
 #[path = "extra_common/objects.rs"]

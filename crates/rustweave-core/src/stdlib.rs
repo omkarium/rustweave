@@ -337,6 +337,11 @@ const NAMES: &[&str] = &[
     "rsplitOnce",
     "stripPrefix",
     "stripSuffix",
+    "unwrapOr",
+    "unwrapOrElse",
+    "mapOr",
+    "andThen",
+    "orElse",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -406,6 +411,11 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("rsplitOnce", "rsplitOnce"),
             ("stripPrefix", "stripPrefix"),
             ("stripSuffix", "stripSuffix"),
+            ("unwrapOr", "unwrapOr"),
+            ("unwrapOrElse", "unwrapOrElse"),
+            ("mapOr", "mapOr"),
+            ("andThen", "andThen"),
+            ("orElse", "orElse"),
         ],
         _ => &[],
     }
@@ -434,8 +444,8 @@ pub fn lambda_positions(name: &str) -> &'static [usize] {
         | "substringBy" | "filterArrayLeafs" | "filterObjectLeafs" | "filterTree"
         | "mapLeafValues" | "nodeExists" | "sort" | "sorted" => &[1],
         "update" | "mask" => &[2],
-        "fold" => &[2],
-        "filterMap" | "position" | "rposition" | "dedup" => &[1],
+        "fold" | "mapOr" => &[2],
+        "filterMap" | "position" | "rposition" | "dedup" | "unwrapOrElse" | "andThen" => &[1],
         "join" | "leftJoin" | "outerJoin" => &[2, 3],
         _ => &[],
     }
@@ -681,6 +691,10 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "rsplitOnce" => extra_split_once(args, true),
         "stripPrefix" => extra_strip_affix(args, true),
         "stripSuffix" => extra_strip_affix(args, false),
+        "unwrapOr" | "orElse" => extra_unwrap_or(args),
+        "unwrapOrElse" => extra_unwrap_or_else(args),
+        "mapOr" => extra_map_or(args),
+        "andThen" => extra_and_then(args),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -5467,6 +5481,47 @@ fn extra_strip_affix(args: &[RValue], prefix: bool) -> Result<Value, DwError> {
     match stripped {
         Some(remainder) => Ok(Value::String(remainder.to_string())),
         None => Ok(Value::Null),
+    }
+}
+
+fn extra_unwrap_or(args: &[RValue]) -> Result<Value, DwError> {
+    let current = value(args, 0)?;
+    let fallback = value(args, 1)?.clone();
+    if current.unwrap_formatted().is_null() {
+        Ok(fallback)
+    } else {
+        Ok(current.clone())
+    }
+}
+
+fn extra_unwrap_or_else(args: &[RValue]) -> Result<Value, DwError> {
+    let current = value(args, 0)?;
+    let fallback = function(args, 1)?;
+    if current.unwrap_formatted().is_null() {
+        call_simple(fallback, &[])
+    } else {
+        Ok(current.clone())
+    }
+}
+
+fn extra_map_or(args: &[RValue]) -> Result<Value, DwError> {
+    let current = value(args, 0)?;
+    let fallback = value(args, 1)?.clone();
+    let function = function(args, 2)?;
+    if current.unwrap_formatted().is_null() {
+        Ok(fallback)
+    } else {
+        call_simple(function, std::slice::from_ref(current))
+    }
+}
+
+fn extra_and_then(args: &[RValue]) -> Result<Value, DwError> {
+    let current = value(args, 0)?;
+    let function = function(args, 1)?;
+    if current.unwrap_formatted().is_null() {
+        Ok(Value::Null)
+    } else {
+        call_simple(function, std::slice::from_ref(current))
     }
 }
 
