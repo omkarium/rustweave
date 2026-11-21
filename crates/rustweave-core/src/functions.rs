@@ -1837,6 +1837,90 @@ impl Function {
         "Builds a right-to-left function pipeline."
     );
     index_function!(
+        EXTRA_COMMON_FOLD,
+        "dw::extra::Common",
+        "fold",
+        "Folds an array from left to right with an initial value."
+    );
+    index_function!(
+        EXTRA_COMMON_FILTER_MAP,
+        "dw::extra::Common",
+        "filterMap",
+        "Maps array elements and drops null results."
+    );
+    index_function!(
+        EXTRA_COMMON_STEP_BY,
+        "dw::extra::Common",
+        "stepBy",
+        "Keeps array elements at a fixed index interval."
+    );
+    index_function!(
+        EXTRA_COMMON_POSITION,
+        "dw::extra::Common",
+        "position",
+        "Finds the first index that satisfies a predicate."
+    );
+    index_function!(
+        EXTRA_COMMON_RPOSITION,
+        "dw::extra::Common",
+        "rposition",
+        "Finds the last index that satisfies a predicate."
+    );
+    index_function!(
+        EXTRA_COMMON_DEDUP,
+        "dw::extra::Common",
+        "dedup",
+        "Removes consecutive duplicate values after key selection."
+    );
+    index_function!(
+        EXTRA_COMMON_WINDOWS,
+        "dw::extra::Common",
+        "windows",
+        "Returns every sliding window of a given size."
+    );
+    index_function!(
+        EXTRA_COMMON_CHUNKS_EXACT,
+        "dw::extra::Common",
+        "chunksExact",
+        "Splits an array into full-size chunks only."
+    );
+    index_function!(
+        EXTRA_COMMON_BINARY_SEARCH,
+        "dw::extra::Common",
+        "binarySearch",
+        "Searches a sorted array and reports the index."
+    );
+    index_function!(
+        EXTRA_COMMON_ROTATE_LEFT,
+        "dw::extra::Common",
+        "rotateLeft",
+        "Rotates array elements to the left."
+    );
+    index_function!(
+        EXTRA_COMMON_ROTATE_RIGHT,
+        "dw::extra::Common",
+        "rotateRight",
+        "Rotates array elements to the right."
+    );
+    index_function!(
+        EXTRA_COMMON_SWAP,
+        "dw::extra::Common",
+        "swap",
+        "Swaps two array elements in a copy."
+    );
+    index_function!(
+        EXTRA_COMMON_FILL,
+        "dw::extra::Common",
+        "fill",
+        "Replaces an index range in an array copy."
+    );
+    index_function!(
+        EXTRA_COMMON_TRUNCATE,
+        "dw::extra::Common",
+        "truncate",
+        "Keeps only the first elements of an array."
+    );
+    index_function!(
         DIFF_DIFF,
         "dw::util::Diff",
         "diff",
@@ -2151,6 +2235,20 @@ impl Function {
         Self::EXTRA_COMMON_IDENTITY,
         Self::EXTRA_COMMON_PIPE,
         Self::EXTRA_COMMON_COMPOSE,
+        Self::EXTRA_COMMON_FOLD,
+        Self::EXTRA_COMMON_FILTER_MAP,
+        Self::EXTRA_COMMON_STEP_BY,
+        Self::EXTRA_COMMON_POSITION,
+        Self::EXTRA_COMMON_RPOSITION,
+        Self::EXTRA_COMMON_DEDUP,
+        Self::EXTRA_COMMON_WINDOWS,
+        Self::EXTRA_COMMON_CHUNKS_EXACT,
+        Self::EXTRA_COMMON_BINARY_SEARCH,
+        Self::EXTRA_COMMON_ROTATE_LEFT,
+        Self::EXTRA_COMMON_ROTATE_RIGHT,
+        Self::EXTRA_COMMON_SWAP,
+        Self::EXTRA_COMMON_FILL,
+        Self::EXTRA_COMMON_TRUNCATE,
         Self::DIFF_DIFF,
     ];
 }

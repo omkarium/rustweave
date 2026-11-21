@@ -3,6 +3,8 @@
 
 #[path = "extra_common/arrays.rs"]
 mod arrays;
+#[path = "extra_common/collections.rs"]
+mod collections;
 #[path = "extra_common/functional.rs"]
 mod functional;
 #[path = "extra_common/numbers.rs"]

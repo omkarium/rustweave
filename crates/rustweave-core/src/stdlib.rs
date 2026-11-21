@@ -319,6 +319,20 @@ const NAMES: &[&str] = &[
     "rpartition",
     "identity",
     "pipe",
+    "fold",
+    "filterMap",
+    "stepBy",
+    "position",
+    "rposition",
+    "dedup",
+    "windows",
+    "chunksExact",
+    "binarySearch",
+    "rotateLeft",
+    "rotateRight",
+    "swap",
+    "fill",
+    "truncate",
 ];
 
 /// Returns every name understood by the runtime dispatcher.
@@ -370,6 +384,20 @@ pub fn module_aliases(module: &str) -> &'static [(&'static str, &'static str)] {
             ("identity", "identity"),
             ("pipe", "pipe"),
             ("compose", "extraCompose"),
+            ("fold", "fold"),
+            ("filterMap", "filterMap"),
+            ("stepBy", "stepBy"),
+            ("position", "position"),
+            ("rposition", "rposition"),
+            ("dedup", "dedup"),
+            ("windows", "windows"),
+            ("chunksExact", "chunksExact"),
+            ("binarySearch", "binarySearch"),
+            ("rotateLeft", "rotateLeft"),
+            ("rotateRight", "rotateRight"),
+            ("swap", "swap"),
+            ("fill", "fill"),
+            ("truncate", "truncate"),
         ],
         _ => &[],
     }
@@ -398,6 +426,8 @@ pub fn lambda_positions(name: &str) -> &'static [usize] {
         | "substringBy" | "filterArrayLeafs" | "filterObjectLeafs" | "filterTree"
         | "mapLeafValues" | "nodeExists" | "sort" | "sorted" => &[1],
         "update" | "mask" => &[2],
+        "fold" => &[2],
+        "filterMap" | "position" | "rposition" | "dedup" => &[1],
         "join" | "leftJoin" | "outerJoin" => &[2, 3],
         _ => &[],
     }
@@ -625,6 +655,20 @@ pub fn call(name: &str, args: &[RValue]) -> Result<Value, DwError> {
         "extraPartition" => extra_partition(args, false),
         "rpartition" => extra_partition(args, true),
         "identity" => Ok(value(args, 0)?.clone()),
+        "fold" => extra_fold(args),
+        "filterMap" => extra_filter_map(args),
+        "stepBy" => extra_step_by(args),
+        "position" => extra_position(args, false),
+        "rposition" => extra_position(args, true),
+        "dedup" => extra_dedup(args),
+        "windows" => extra_windows(args),
+        "chunksExact" => extra_chunks_exact(args),
+        "binarySearch" => extra_binary_search(args),
+        "rotateLeft" => extra_rotate(args, true),
+        "rotateRight" => extra_rotate(args, false),
+        "swap" => extra_swap(args),
+        "fill" => extra_fill(args),
+        "truncate" => extra_truncate(args),
         "arrayItem" => type_array_item(args),
         "baseTypeOf" => type_base(args),
         "functionParamTypes" => type_function_params(args),
@@ -5182,6 +5226,199 @@ fn extra_sequence(args: &[RValue], left_to_right: bool) -> Result<RValue, DwErro
         }
     }
     Ok(RValue::Sequence(functions, left_to_right))
+}
+
+fn extra_fold(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let mut accumulator = value(args, 1)?.clone();
+    let function = function(args, 2)?;
+    for item in items {
+        accumulator = call_simple(function, &[item, accumulator])?;
+    }
+    Ok(accumulator)
+}
+
+fn extra_filter_map(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let function = function(args, 1)?;
+    let mut out = Vec::new();
+    for item in items {
+        let mapped = call_simple(function, std::slice::from_ref(&item))?;
+        if !mapped.unwrap_formatted().is_null() {
+            out.push(mapped);
+        }
+    }
+    Ok(Value::Array(out))
+}
+
+fn extra_step_by(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let step = integer(args, 1)?;
+    if step <= 0 {
+        return Err(DwError::new("stepBy step must be a positive integer"));
+    }
+    Ok(Value::Array(
+        items.into_iter().step_by(step as usize).collect(),
+    ))
+}
+
+fn extra_position(args: &[RValue], reverse: bool) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let predicate = function(args, 1)?;
+    let found = if reverse {
+        let mut found = -1;
+        for (index, item) in items.iter().enumerate().rev() {
+            if call_simple(predicate, std::slice::from_ref(item))?.truthy() {
+                found = index as i64;
+                break;
+            }
+        }
+        found
+    } else {
+        let mut found = -1;
+        for (index, item) in items.iter().enumerate() {
+            if call_simple(predicate, std::slice::from_ref(item))?.truthy() {
+                found = index as i64;
+                break;
+            }
+        }
+        found
+    };
+    Ok(Value::Number(Number::from_i64(found)))
+}
+
+fn extra_dedup(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let key_function = if args.len() > 1 {
+        Some(function(args, 1)?)
+    } else {
+        None
+    };
+    let mut previous: Option<Value> = None;
+    let mut out = Vec::new();
+    for item in items {
+        let key = match key_function {
+            Some(function) => call_simple(function, std::slice::from_ref(&item))?,
+            None => item.clone(),
+        };
+        let key = key.unwrap_formatted().clone();
+        if previous.as_ref() != Some(&key) {
+            previous = Some(key);
+            out.push(item);
+        }
+    }
+    Ok(Value::Array(out))
+}
+
+fn extra_windows(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let size = integer(args, 1)?;
+    if size <= 0 {
+        return Err(DwError::new("windows size must be a positive integer"));
+    }
+    let size = size as usize;
+    if size > items.len() {
+        return Ok(Value::Array(Vec::new()));
+    }
+    Ok(Value::Array(
+        items
+            .windows(size)
+            .map(|window| Value::Array(window.to_vec()))
+            .collect(),
+    ))
+}
+
+fn extra_chunks_exact(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let size = integer(args, 1)?;
+    if size <= 0 {
+        return Err(DwError::new("chunksExact size must be a positive integer"));
+    }
+    Ok(Value::Array(
+        items
+            .chunks_exact(size as usize)
+            .map(|chunk| Value::Array(chunk.to_vec()))
+            .collect(),
+    ))
+}
+
+fn extra_binary_search(args: &[RValue]) -> Result<Value, DwError> {
+    let items = array(args, 0)?;
+    let needle = value(args, 1)?;
+    let mut low = 0usize;
+    let mut high = items.len();
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if extra_compare_keys(&items[middle], needle, false)? == Ordering::Less {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    let found =
+        low < items.len() && extra_compare_keys(&items[low], needle, false)? == Ordering::Equal;
+    Ok(Value::Object(vec![
+        ("found".to_string(), Value::Bool(found)),
+        ("index".to_string(), Value::Number(Number::from_usize(low))),
+    ]))
+}
+
+fn extra_rotate(args: &[RValue], left: bool) -> Result<Value, DwError> {
+    let mut items = array(args, 0)?;
+    let count = integer(args, 1)?;
+    if items.is_empty() {
+        return Ok(Value::Array(items));
+    }
+    let shift = count.rem_euclid(items.len() as i64) as usize;
+    if left {
+        items.rotate_left(shift);
+    } else {
+        items.rotate_right(shift);
+    }
+    Ok(Value::Array(items))
+}
+
+fn extra_swap(args: &[RValue]) -> Result<Value, DwError> {
+    let mut items = array(args, 0)?;
+    let left = integer(args, 1)?;
+    let right = integer(args, 2)?;
+    let length = items.len() as i64;
+    if left < 0 || right < 0 || left >= length || right >= length {
+        return Err(DwError::new("swap indices are out of bounds"));
+    }
+    items.swap(left as usize, right as usize);
+    Ok(Value::Array(items))
+}
+
+fn extra_fill(args: &[RValue]) -> Result<Value, DwError> {
+    let mut items = array(args, 0)?;
+    let replacement = value(args, 1)?.clone();
+    let length = items.len() as i64;
+    let start = if args.len() > 2 { integer(args, 2)? } else { 0 };
+    let end = if args.len() > 3 {
+        integer(args, 3)?
+    } else {
+        length
+    };
+    if start < 0 || end < start || end > length {
+        return Err(DwError::new("fill bounds are invalid"));
+    }
+    for slot in &mut items[start as usize..end as usize] {
+        *slot = replacement.clone();
+    }
+    Ok(Value::Array(items))
+}
+
+fn extra_truncate(args: &[RValue]) -> Result<Value, DwError> {
+    let mut items = array(args, 0)?;
+    let length = integer(args, 1)?;
+    if length < 0 {
+        return Err(DwError::new(
+            "truncate length must be a non-negative integer",
+        ));
+    }
+    items.truncate(length as usize);
+    Ok(Value::Array(items))
 }
 
 fn compose(args: &[RValue]) -> Result<Value, DwError> {
