@@ -407,9 +407,19 @@ Header output also accepts the format IDs `json`, `csv`, `xml`, `dw`, and `text`
 Format IDs map to the corresponding writer, and `with` chooses the writer without changing the
 declared type. An unknown writer is an error.
 
-CSV reader and writer options include `header`, `separator`, `quote`, `escape`,
-`recordSeparator`, `skipEmptyLine`, and `nullValue`. XML options include `attributePrefix`,
-`textKey`, `namespaceSeparator`, `writeDeclaration`, and `indent`. YAML options include `indent`
+CSV reader options include `header`, `separator`, `quote`, `escape`, `headerLineNumber`,
+`bodyStartLineNumber`, `recordSeparator`, `skipEmptyLine`, and `nullValue`. With `header=false`,
+rows are objects keyed `column_0`, `column_1`, and so on. `headerLineNumber` selects the header
+line and skips earlier lines.
+
+CSV writer options include `header`, `separator`, `quote`, `escape`, `quoteValues`, `quoteHeader`,
+and `recordSeparator`. When `escape` is supplied or `quoteValues=false`, separators are escaped
+with the escape character instead of quoted. An empty object row emits an empty line.
+
+JSON writer options include `indent`, `skipNullOn`, and `duplicateKeyAsArray`. Duplicate keys are
+grouped into arrays using the reference indentation. XML writer options include
+`attributePrefix`, `textKey`, `namespaceSeparator`, `writeDeclaration`, `indent`,
+`defaultNamespace`, `writeNilOnNull`, `escapeCR`, and `skipNullOn`. YAML options include `indent`
 and `writeDocumentStart`. The same options can be supplied in the `output` header.
 
 Read quoted CSV fields and write XML and YAML values:
@@ -487,6 +497,34 @@ output application/problem+json with csv separator=";"
 ```text
 sku;qty
 A-1;2
+```
+
+Read CSV rows without a header and write XML with a default namespace:
+
+```text
+%dw 2.0
+output application/json
+---
+{
+  rows: read("10,20\n30,40", "application/csv", {header: false}),
+  xml: write({part: 7}, "application/xml", {writeDeclaration: false, defaultNamespace: "http://sample.test/ns"})
+}
+```
+
+```json
+{
+  "rows": [
+    {
+      "column_0": "10",
+      "column_1": "20"
+    },
+    {
+      "column_0": "30",
+      "column_1": "40"
+    }
+  ],
+  "xml": "<part xmlns=\"http://sample.test/ns\">7</part>"
+}
 ```
 
 `readUrl` selects a format from `.json`, `.csv`, `.xml`, `.yaml`, `.yml`, and falls back to

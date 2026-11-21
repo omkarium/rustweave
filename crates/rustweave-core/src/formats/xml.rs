@@ -22,6 +22,10 @@ struct XmlOptions {
     namespace_separator: String,
     write_declaration: bool,
     indent: bool,
+    default_namespace: Option<String>,
+    write_nil_on_null: bool,
+    escape_cr: bool,
+    skip_null_on: Option<String>,
 }
 
 impl XmlOptions {
@@ -36,6 +40,10 @@ impl XmlOptions {
                 .unwrap_or_else(|| ":".to_string()),
             write_declaration: bool_option(options, "writeDeclaration", true)?,
             indent: bool_option(options, "indent", false)?,
+            default_namespace: string_option(options, "defaultNamespace", None)?,
+            write_nil_on_null: bool_option(options, "writeNilOnNull", false)?,
+            escape_cr: bool_option(options, "escapeCR", false)?,
+            skip_null_on: string_option(options, "skipNullOn", None)?,
         })
     }
 
@@ -204,7 +212,7 @@ fn xml_node_value(node: &XmlNode, options: &XmlOptions) -> Value {
     Value::Object(entries)
 }
 
-fn escape_xml(text: &str) -> String {
+fn escape_xml(text: &str, escape_cr: bool) -> String {
     let mut out = String::with_capacity(text.len());
     for character in text.chars() {
         match character {
@@ -213,6 +221,7 @@ fn escape_xml(text: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&apos;"),
+            '\r' if escape_cr => out.push_str("&#xd;"),
             other => out.push(other),
         }
     }
@@ -264,6 +273,11 @@ fn write_xml_element(
         }
         None => name.to_string(),
     };
+    if level == 0 {
+        if let Some(uri) = &options.default_namespace {
+            attributes.push(("xmlns".to_string(), uri.clone()));
+        }
+    }
     match value {
         Value::Object(entries) => {
             for (key, item) in entries {
@@ -272,12 +286,28 @@ fn write_xml_element(
                     attributes.push((attribute.to_string(), attribute_value));
                 } else if key == &options.text_key {
                     text = Some(xml_scalar(item)?);
-                } else {
+                } else if !(item.is_null()
+                    && matches!(
+                        options.skip_null_on.as_deref(),
+                        Some("elements" | "everywhere")
+                    ))
+                {
                     children.push((key.as_str(), item));
                 }
             }
         }
-        Value::Null => {}
+        Value::Null => {
+            if options.write_nil_on_null {
+                if !child_scope.iter().any(|existing| existing == "xsi") {
+                    attributes.push((
+                        "xmlns:xsi".to_string(),
+                        "http://www.w3.org/2001/XMLSchema-instance".to_string(),
+                    ));
+                    child_scope.push("xsi".to_string());
+                }
+                attributes.push(("xsi:nil".to_string(), "true".to_string()));
+            }
+        }
         other => text = Some(xml_scalar(other)?),
     }
 
@@ -296,7 +326,7 @@ fn write_xml_element(
         out.push(' ');
         out.push_str(attribute);
         out.push_str("=\"");
-        out.push_str(&escape_xml(value));
+        out.push_str(&escape_xml(value, options.escape_cr));
         out.push('"');
     }
     if !has_body {
@@ -305,7 +335,7 @@ fn write_xml_element(
     }
     out.push('>');
     if let Some(text) = text {
-        out.push_str(&escape_xml(&text));
+        out.push_str(&escape_xml(&text, options.escape_cr));
     }
     let had_children = !children.is_empty();
     for (child_name, child) in children {
@@ -335,13 +365,23 @@ pub(crate) fn write_xml(
     namespaces: &[(String, String)],
 ) -> Result<String, DwError> {
     let options = XmlOptions::read(properties)?;
-    let entries = object_entries(value)?;
+    let all_entries = object_entries(value)?;
+    let entries: Vec<&(String, Value)> = all_entries
+        .iter()
+        .filter(|(_, item)| {
+            !(item.is_null()
+                && matches!(
+                    options.skip_null_on.as_deref(),
+                    Some("elements" | "everywhere")
+                ))
+        })
+        .collect();
     if entries.len() != 1 {
         return Err(DwError::new(
             "XML output requires an object with exactly one root key",
         ));
     }
-    let (name, root) = &entries[0];
+    let (name, root) = entries[0];
     let mut out = String::new();
     if options.write_declaration {
         out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");

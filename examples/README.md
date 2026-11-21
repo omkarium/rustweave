@@ -46,6 +46,7 @@ of functions shown.
 [types-and-namespaces.md](types-and-namespaces.md) shows declared types, namespace prefixes, and
 output format IDs.
 [runtime-errors.md](runtime-errors.md) shows `dw::Runtime` error capture and fallbacks.
+[format-options.md](format-options.md) shows JSON, CSV, and XML reader/writer options.
 [combined.md](combined.md) combines Core, Arrays, Objects, and Tree in one inventory report.
 [scenarios.md](scenarios.md) contains three larger business-style pipelines with input files from
 [`data/`](data/).
