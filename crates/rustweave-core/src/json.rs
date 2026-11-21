@@ -80,6 +80,41 @@ fn skip_null(options: &WriteOptions, container: &str) -> bool {
     }
 }
 
+/// Reports whether a key occurs more than once in the source entries.
+fn is_duplicate_key(entries: &[(String, Value)], key: &str) -> bool {
+    entries.iter().filter(|(name, _)| name == key).count() > 1
+}
+
+/// Writes an array created from duplicate keys using the reference indentation.
+fn write_grouped_array(items: &[Value], level: usize, out: &mut String, options: &WriteOptions) {
+    out.push('[');
+    if options.indent {
+        out.push('\n');
+        if items.is_empty() {
+            indent(level, out);
+            out.push('\n');
+        } else {
+            for (index, item) in items.iter().enumerate() {
+                indent(level, out);
+                write_value_options(item, level, out, options);
+                if index + 1 < items.len() {
+                    out.push(',');
+                }
+                out.push('\n');
+            }
+        }
+        indent(level, out);
+    } else {
+        for (index, item) in items.iter().enumerate() {
+            if index > 0 {
+                out.push(',');
+            }
+            write_value_options(item, level, out, options);
+        }
+    }
+    out.push(']');
+}
+
 fn grouped_entries(entries: &[(String, Value)], options: &WriteOptions) -> Vec<(String, Value)> {
     if !options.duplicate_key_as_array {
         return entries.to_vec();
@@ -135,8 +170,8 @@ fn write_value_options(value: &Value, level: usize, out: &mut String, options: &
             }
             out.push(']');
         }
-        Value::Object(entries) => {
-            let entries: Vec<(String, Value)> = grouped_entries(entries, options)
+        Value::Object(source) => {
+            let entries: Vec<(String, Value)> = grouped_entries(source, options)
                 .into_iter()
                 .filter(|(_, item)| !(skip_null(options, "objects") && item.is_null()))
                 .collect();
@@ -151,7 +186,15 @@ fn write_value_options(value: &Value, level: usize, out: &mut String, options: &
                         indent(level + 1, out);
                         write_string(key, out);
                         out.push_str(": ");
-                        write_value_options(item, level + 1, out, options);
+                        match item {
+                            Value::Array(items)
+                                if options.duplicate_key_as_array
+                                    && is_duplicate_key(source, key) =>
+                            {
+                                write_grouped_array(items, level + 1, out, options)
+                            }
+                            _ => write_value_options(item, level + 1, out, options),
+                        }
                         if index + 1 < entries.len() {
                             out.push(',');
                         }
@@ -166,7 +209,14 @@ fn write_value_options(value: &Value, level: usize, out: &mut String, options: &
                     }
                     write_string(key, out);
                     out.push_str(": ");
-                    write_value_options(item, level + 1, out, options);
+                    match item {
+                        Value::Array(items)
+                            if options.duplicate_key_as_array && is_duplicate_key(source, key) =>
+                        {
+                            write_grouped_array(items, level + 1, out, options)
+                        }
+                        _ => write_value_options(item, level + 1, out, options),
+                    }
                 }
             }
             out.push('}');
